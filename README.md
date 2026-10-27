@@ -66,11 +66,29 @@ Each entry represents one physical bottle. Member removal permanently removes th
 
 ## Whiskey database integration
 
-`GET /api/catalog?q=...` currently searches twelve curated entries in `catalog.js`. This is explicitly labeled in the app. Select a result to fill name, distillery, and proof; all details remain editable. Proof can vary by release and market. The catalog has no photos, tasting notes, or prices and should not be treated as authoritative.
+The app includes a **254-record BarrelDex offline snapshot**. After pulling the latest code, restart with `npm start`; no account, live API call, or separate import is needed. Search is available for both cabinet bottles and tasting-flight pours.
 
-Live provider access is not configured. Requests to whiskyhunter.net and thecocktaildb.com were denied by the setup environment's network proxy. The latter is an ingredient/cocktail source rather than a comprehensive bottle catalog; neither has been validated as a suitable bottle provider. Before integrating a service, confirm bottle-level coverage, license, authentication, quota, and access. Implement a server-side adapter in `/api/catalog` that returns `{source, results: [{name, distillery, proof}]}`; keep provider credentials on the server and retain manual entry on errors. Do not put API keys in browser code.
+### Optional: update the catalog from another download
 
-The user provided `https://barreldex.com/data/bottles.json` as a preferred catalog source. The environment proxy denied this domain too. `barreldex.com` has been requested in the environment configuration draft; that does not apply network access until saved. No BarrelDex records or third-party flavor datasets are bundled. The supplied research reports CC BY 4.0 for BarrelDex, but the actual dataset schema, license text, attribution requirements, record count, and current coverage have not yet been verified. The tasting vocabulary in `tasting.js` is original to this app. See `docs/data-model.md` for the catalog integration direction.
+The bundled snapshot lives in `catalog-data/barreldex.json`. To use a newer provider download locally, run:
+
+```sh
+npm run import:catalog -- /path/to/bottles.json
+```
+
+Quote paths containing spaces. Restart the server afterward. A validated local copy at `data/catalog/barreldex.json` takes precedence over the bundled snapshot and is ignored by Git. Existing cabinets and tastings are never modified by the importer. To intentionally replace an existing local copy, back it up and add `--replace`. Invalid replacements leave the previous catalog intact. Remove only the local override to return to the bundled snapshot. If neither snapshot is present, twelve starter entries remain available.
+
+### Lookup behavior
+
+Both **Add a bottle** and **Add a pour** search names, verified distilleries, suppliers, and categories. The uploaded snapshot inspected during development contains 254 records. The API returns stable `barreldex:<slug>` references, source metadata, counts, and up to 25 matches; refine the search for more specific results. Selecting a result fills editable identity/proof fields. Cabinet entries also store age statement and bottle size. Age is never converted into release year. Missing distilleries stay blank instead of substituting the supplier. Existing notes, release year/batch, and actual purchase price are preserved.
+
+Dated NC/VA/PA retail observations are displayed separately, with source links, retrieval dates, and caveats. They are not MSRP, current market value, or acquisition cost, and never autofill the purchase-price field. Records identify their source verification dates; the app has not independently verified those dates or underlying prices. Details may vary by batch or market; confirm the physical label. Manual entries remain available.
+
+### Attribution and data rights
+
+Credit: **[BarrelDex (barreldex.com)](https://barreldex.com)**. The user supplied the provider's license text permitting reuse of its selection, structure, classifications, and notes under **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)** with linked credit. The unchanged uploaded JSON is bundled with the supplied terms and provenance in `catalog-data/ATTRIBUTION.md`. The provider website remains blocked here, so the licensing text was supplied by the user rather than fetched independently. The app displays linked attribution and the license alongside selected catalog details.
+
+Original source: `https://barreldex.com/data/bottles.json`. Source dates and per-record caveats are preserved, with no claim that prices are current or independently verified. No scraping, external review imports, bottle photographs, or brand endorsement is involved. The tasting vocabulary remains original to this app. See `docs/data-model.md` for the catalog architecture direction.
 
 ## Before a public launch
 

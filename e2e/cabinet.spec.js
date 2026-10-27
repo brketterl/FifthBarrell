@@ -13,9 +13,9 @@ test('members can catalog, filter, update, and remove a bottle',async({page},tes
   await page.locator('#add-bottle').click();
   const form=page.locator('#bottle-dialog');
   await form.getByLabel('Look up a whiskey').fill('eagle');
-  await form.getByRole('button',{name:/Eagle Rare 10 Year/}).click();
-  await expect(form.getByLabel('Name of bottle')).toHaveValue('Eagle Rare 10 Year');
-  await form.getByLabel('Year').fill('2026'); await form.getByLabel('Preference').selectOption('Favorite');
+  await form.getByRole('button',{name:/Eagle Rare 10(Y| Year)/}).click();
+  await expect(form.getByLabel('Name of bottle')).toHaveValue(/^Eagle Rare 10/);
+  await form.getByRole('spinbutton',{name:/^Year/}).fill('2026'); await form.getByLabel('Preference').selectOption('Favorite');
   await form.getByLabel('Purchase price').fill('59.99');
   await form.getByLabel('Bourbon / tasting notes').fill('Oak, vanilla, and orange peel.');
   await form.getByLabel('Member notes').fill('A great pour with friends.');

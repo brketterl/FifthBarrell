@@ -35,7 +35,7 @@ test('society lifecycle, bottle validation, persistence, lookup, and member remo
     await stop(); app=createApp(path); server=http.createServer(app.handler); await start();
     state=(await request('state')).data; assert.equal(state.bottles.length,2); assert.equal(state.members.length,2);
     assert.equal(state.bottles.find(b=>b.id===saved.data.id).member_notes,'Updated notes.');
-    const lookup=(await request('catalog?q=eagle')).data; assert.equal(lookup.results[0].name,'Eagle Rare 10 Year');
+    const lookup=(await request('catalog?q=eagle')).data; assert.match(lookup.results[0].name,/^Eagle Rare 10/); assert.ok(lookup.total>=12);assert.ok(lookup.results[0].id);
     assert.equal((await request('members/'+first.id,'DELETE')).status,200);
     state=(await request('state')).data; assert.equal(state.bottles.length,1); assert.equal(state.bottles[0].member_id,second.id);
     assert.equal((await request('bottles/'+another.id,'DELETE')).status,200);

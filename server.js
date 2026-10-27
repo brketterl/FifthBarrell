@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { catalog } from './catalog.js';
+import { searchCatalog } from './catalog.js';
 import { setupTastings, tastingStages } from './tasting.js';
 import { setupEvents } from './events.js';
 
@@ -19,6 +19,8 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
     remaining REAL NOT NULL, price REAL, bourbon_notes TEXT NOT NULL DEFAULT '', member_notes TEXT NOT NULL DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP);`);
   const tastings=setupTastings(db);
   const events=setupEvents(db);
+  const bottleColumns=new Set(db.prepare('PRAGMA table_info(bottles)').all().map(c=>c.name));
+  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
   const send = (res, status, body) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(body)); };
   async function body(req) {
     let value=''; for await (const part of req) { value += part; if (value.length>65536) throw new Error('Request is too large.'); }
@@ -32,9 +34,12 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
       if (result[key].length>10000) throw new Error('Text is too long.');
     }
     if (!result.name) throw new Error('Bottle name is required.');
+    if(input.catalog_id!=null&&typeof input.catalog_id!=='string')throw new Error('Invalid catalog reference.');
+    result.catalog_id=input.catalog_id?.trim()||null;
+    if(result.catalog_id?.length>250)throw new Error('Catalog reference is too long.');
     if (!ratings.includes(input.rating)) throw new Error('Choose a bottle preference.');
     result.rating=input.rating;
-    for (const [key,min,max,optional] of [['member_id',1,Number.MAX_SAFE_INTEGER,false],['proof',0,200,true],['year',1700,2200,true],['remaining',0,100,false],['price',0,10000000,true]]) {
+    for (const [key,min,max,optional] of [['member_id',1,Number.MAX_SAFE_INTEGER,false],['proof',0,200,true],['year',1700,2200,true],['remaining',0,100,false],['price',0,10000000,true],['age_years',0,200,true],['size_ml',1,100000,true]]) {
       const raw=input[key];
       if (optional && (raw==null || raw==='')) { result[key]=null; continue; }
       if (raw==null || raw==='' || typeof raw==='boolean') throw new Error(`Please enter ${key.replace('_',' ')}.`);
@@ -71,8 +76,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
         return send(res,removed?200:404,removed?{ok:true}:{error:'Tasting not found.'});
       }
       if (url.pathname==='/api/catalog' && req.method==='GET') {
-        const q=(url.searchParams.get('q')||'').toLowerCase();
-        return send(res,200,{source:'Curated starter catalog · verify details against the bottle label',results:catalog.filter(b=>(b.name+' '+b.distillery).toLowerCase().includes(q)).slice(0,12)});
+        return send(res,200,searchCatalog(url.searchParams.get('q')||''));
       }
       if (url.pathname==='/api/members' && req.method==='POST') {
         const input=await body(req); const name=typeof input.name==='string'?input.name.trim():'';

@@ -50,10 +50,10 @@ function bottleDialog(b=null) {
   if (!state.members.length) { toast('Add a member first, then add their bottle.'); view(true); memberDialog(); return; }
   editing=b?.id??null; const form=$('#bottle-form'); form.reset();
   form.elements.member_id.innerHTML=state.members.map(m=>`<option value="${m.id}">${escape(m.name)}</option>`).join('');
-  if (b) for (const key of ['name','member_id','distillery','proof','year','rating','remaining','price','bourbon_notes','member_notes']) form.elements[key].value=b[key]??'';
+  if (b) for (const key of ['name','member_id','distillery','proof','year','rating','remaining','price','bourbon_notes','member_notes','catalog_id','age_years','size_ml']) form.elements[key].value=b[key]??'';
   else if ($('#member-filter').value) form.elements.member_id.value=$('#member-filter').value;
   $('#bottle-title').textContent=b?'Edit bottle':'Add a bottle'; $('#remaining-output').value=form.elements.remaining.value+'%';
-  $('#lookup-results').replaceChildren(); $('#bottle-error').textContent=''; $('#bottle-dialog').showModal();
+  bottleLookup.reset(); $('#bottle-error').textContent=''; $('#bottle-dialog').showModal();
 }
 $('#add-bottle').onclick=()=>bottleDialog(); $('#empty-add').onclick=()=>bottleDialog();
 $('#bottle-form').elements.remaining.oninput=e=>$('#remaining-output').value=e.target.value+'%';
@@ -69,20 +69,10 @@ $('#bottle-form').onsubmit=async e=>{
   e.preventDefault(); const form=e.target;
   await submit(form,form.querySelector('[type=submit]'),$('#bottle-error'),async()=>{ await api(editing?'bottles/'+editing:'bottles',editing?'PUT':'POST',Object.fromEntries(new FormData(form))); toast(editing?'Bottle updated.':'Bottle added to the cabinet.'); });
 };
-$('#lookup').oninput=async e=>{
-  const version=++lookupVersion, q=e.target.value.trim(); if(q.length<2) { $('#lookup-results').replaceChildren(); return; }
-  try {
-    const data=await api('catalog?q='+encodeURIComponent(q)); if(version!==lookupVersion)return;
-    $('#lookup-results').innerHTML=data.results.length?data.results.map((b,i)=>`<button type="button" class="lookup-result" data-result="${i}">${escape(b.name)}<small>${escape(b.distillery)} · ${b.proof} proof</small></button>`).join(''):'<p class="help">No catalog match. Enter your bottle details below.</p>';
-    $('#lookup-results').querySelectorAll('button').forEach(button=>button.onclick=()=>{
-      const b=data.results[Number(button.dataset.result)]; for (const key of ['name','distillery','proof']) $('#bottle-form').elements[key].value=b[key];
-      $('#lookup-results').replaceChildren(); $('#lookup').value=b.name; toast('Catalog details filled in. Verify proof against the bottle label.');
-    });
-  } catch(e) { if(version===lookupVersion) $('#lookup-results').textContent='Lookup is unavailable. You can enter details manually.'; }
-};
+
 function detail(id) {
   const b=state.bottles.find(b=>b.id===id); if(!b)return;
-  $('#detail').innerHTML=`<div class="dialog-header"><div><div class="eyebrow">${escape(b.distillery||'THE COLLECTION')}</div><h2>${escape(b.name)}</h2></div><button class="icon-button" id="close-detail" aria-label="Close">×</button></div><div class="bottle-art detail-art"><span class="badge">${escape(b.rating)}</span>${art(b)}</div><div class="details-grid"><div><small>Member</small><strong>${escape(owner(b.member_id))}</strong></div><div><small>Proof</small><strong>${b.proof??'—'}</strong></div><div><small>Release year</small><strong>${b.year??'—'}</strong></div><div><small>Purchase price</small><strong>${b.price==null?'—':money(b.price)}</strong></div><div><small>Amount left</small><strong>${b.remaining}%</strong></div></div>${meter(b.remaining)}<div class="notes"><h3>Bourbon / tasting notes</h3><p>${escape(b.bourbon_notes||'No tasting notes yet.')}</p></div><div class="notes"><h3>Member notes</h3><p>${escape(b.member_notes||'No member notes yet.')}</p></div><div class="detail-actions"><button class="danger" id="delete-bottle">Remove bottle</button><button class="primary" id="edit-bottle">Edit bottle</button></div>`;
+  $('#detail').innerHTML=`<div class="dialog-header"><div><div class="eyebrow">${escape(b.distillery||'THE COLLECTION')}</div><h2>${escape(b.name)}</h2></div><button class="icon-button" id="close-detail" aria-label="Close">×</button></div><div class="bottle-art detail-art"><span class="badge">${escape(b.rating)}</span>${art(b)}</div><div class="details-grid"><div><small>Member</small><strong>${escape(owner(b.member_id))}</strong></div><div><small>Proof</small><strong>${b.proof??'—'}</strong></div><div><small>Age statement</small><strong>${b.age_years==null?'—':b.age_years+' years'}</strong></div><div><small>Bottle size</small><strong>${b.size_ml==null?'—':b.size_ml+' mL'}</strong></div><div><small>Release year</small><strong>${b.year??'—'}</strong></div><div><small>Purchase price</small><strong>${b.price==null?'—':money(b.price)}</strong></div><div><small>Amount left</small><strong>${b.remaining}%</strong></div></div>${meter(b.remaining)}<div class="notes"><h3>Bourbon / tasting notes</h3><p>${escape(b.bourbon_notes||'No tasting notes yet.')}</p></div><div class="notes"><h3>Member notes</h3><p>${escape(b.member_notes||'No member notes yet.')}</p></div><div class="detail-actions"><button class="danger" id="delete-bottle">Remove bottle</button><button class="primary" id="edit-bottle">Edit bottle</button></div>`;
   $('#close-detail').onclick=()=>$('#detail-dialog').close();
   $('#edit-bottle').onclick=()=>{ $('#detail-dialog').close(); bottleDialog(b); };
   $('#delete-bottle').onclick=async()=>{
@@ -125,7 +115,7 @@ function renderEvents() {
     $('#add-pour').onclick=()=>{
       pouringEventId=selected.id;const f=$('#pour-form');f.reset();
       f.elements.bottle_id.innerHTML='<option value="">Enter a whiskey manually</option>'+state.bottles.map(b=>`<option value="${b.id}">${escape(b.name)} · ${escape(owner(b.member_id))}</option>`).join('');
-      $('#pour-error').textContent='';$('#pour-dialog').showModal();
+      pourLookup.reset();$('#pour-error').textContent='';$('#pour-dialog').showModal();
     };
     $('#remove-event').onclick=async()=>{
       if(!confirm(`Remove “${selected.name}” and its flight? Tasting records will remain in the journal without the event link.`))return;
@@ -158,7 +148,7 @@ $('#event-form').onsubmit=async e=>{
   await submit(f,f.querySelector('[type=submit]'),$('#event-error'),async()=>{const result=await api('events','POST',Object.fromEntries(new FormData(f)));selectedEventId=String(result.id);toast('Event created. Add the first pour to your flight.');});
 };
 $('#pour-form').elements.bottle_id.onchange=e=>{
-  const b=state.bottles.find(b=>String(b.id)===e.target.value),f=$('#pour-form');
+  const b=state.bottles.find(b=>String(b.id)===e.target.value),f=$('#pour-form');pourLookup.reset();f.elements.catalog_id.value=b?.catalog_id??'';
   for(const [key,value] of Object.entries({whiskey_name:b?.name??'',distillery:b?.distillery??'',release:b?.year??'',proof:b?.proof??''}))f.elements[key].value=value;
 };
 $('#pour-form').onsubmit=async e=>{
@@ -195,4 +185,31 @@ $('#tasting-history').onclick=async e=>{
 $('#export-data').onclick=async()=>{
   try{const current=await api('state'),url=URL.createObjectURL(new Blob([JSON.stringify({application:'Fifth Barrel Society',version:1,exported_at:new Date().toISOString(),...current},null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='fifth-barrel-society-'+localDate()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){toast(e.message);}
 };
+function safeSourceLink(url,label) {
+  try { const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password)throw new Error();return `<a href="${escape(u.href)}" target="_blank" rel="noopener noreferrer">${escape(label)}</a>`; } catch { return escape(label); }
+}
+function catalogLookup(inputSelector,resultsSelector,referenceSelector,fill) {
+  const input=$(inputSelector),results=$(resultsSelector),reference=$(referenceSelector);let version=0;
+  function reset(){version++;input.value='';results.replaceChildren();reference.hidden=true;reference.replaceChildren();}
+  input.oninput=async()=>{
+    const current=++version,q=input.value.trim();results.replaceChildren();if(q.length<2)return;
+    try {
+      const data=await api('catalog?q='+encodeURIComponent(q));if(current!==version)return;
+      results.innerHTML=`<p class="help">${safeSourceLink(data.url,data.source)} · ${data.matched} matches${data.matched>data.results.length?' · Showing the first '+data.results.length+', refine your search':''}</p>`+(data.results.length?data.results.map((b,i)=>`<button type="button" class="lookup-result" data-result="${i}">${escape(b.name)}<small>${escape(b.distillery||'Distillery not verified')}${b.supplier?' · Supplier: '+escape(b.supplier):''} · ${b.proof==null?'Proof unknown':escape(b.proof)+' proof'}</small></button>`).join(''):'<p class="help">No catalog match. Enter your bottle details manually.</p>');
+      results.querySelectorAll('button').forEach(button=>button.onclick=()=>{
+        const b=data.results[Number(button.dataset.result)];fill(b);input.value=b.name;results.replaceChildren();reference.hidden=false;
+        reference.innerHTML=`<strong>${escape(b.name)}</strong><p class="help">${safeSourceLink(data.url,data.source)}${data.license?' · '+safeSourceLink(data.license,'CC BY 4.0'):''}${b.last_verified?' · Source verification date: '+escape(b.last_verified):''}<br>${b.age_years==null?'Age not stated':escape(b.age_years)+' years old'}${b.size_ml==null?'':' · '+escape(b.size_ml)+' mL'}${b.supplier?' · Supplier: '+escape(b.supplier):''}</p>${b.prices.length?'<details><summary>Dated retail reference prices</summary>'+b.prices.map(p=>`<p class="help">${escape(p.state||'Retail')} · ${money(p.amount_usd)} · ${escape(p.retrieved||'Date unknown')}<br>${safeSourceLink(p.url,p.source||'Price source')}${p.note?'<br>'+escape(p.note):''}</p>`).join('')+'</details>':''}${b.flags.length?'<details><summary>Source caveats</summary><ul>'+b.flags.map(flag=>'<li>'+escape(flag)+'</li>').join('')+'</ul></details>':''}<p class="help">${escape(data.note)}</p>`;
+      });
+    }catch(e){if(current===version)results.textContent='Lookup is unavailable. Enter the whiskey details manually.';}
+  };
+  return {reset};
+}
+const bottleLookup=catalogLookup('#lookup','#lookup-results','#catalog-reference',b=>{
+  const f=$('#bottle-form');for(const [key,value] of Object.entries({name:b.name,distillery:b.distillery,proof:b.proof,catalog_id:b.id,age_years:b.age_years,size_ml:b.size_ml}))f.elements[key].value=value??'';
+  toast('Catalog details filled in. Check your label; purchase price and release year are unchanged.');
+});
+const pourLookup=catalogLookup('#pour-lookup','#pour-lookup-results','#pour-catalog-reference',b=>{
+  const f=$('#pour-form');f.elements.bottle_id.value='';for(const [key,value] of Object.entries({whiskey_name:b.name,distillery:b.distillery,proof:b.proof,catalog_id:b.id}))f.elements[key].value=value??'';
+  toast('Catalog whiskey selected. Confirm the batch and proof for this pour.');
+});
 refresh().catch(e=>{ $('#empty').hidden=false; $('#empty h2').textContent='The cabinet could not be loaded.'; $('#empty p').textContent='Please refresh to try again. '+e.message; $('#empty-add').hidden=true; });
