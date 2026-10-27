@@ -8,7 +8,8 @@
     "dev": "node --watch server.js",
     "test": "node --test test/*.test.js",
     "test:browser": "playwright test",
-    "import:catalog": "node scripts/import-catalog.js"
+    "import:catalog": "node scripts/import-catalog.js",
+    "update:catalog": "node --use-env-proxy scripts/update-catalog.js"
   },
   "engines": {
     "node": ">=24"

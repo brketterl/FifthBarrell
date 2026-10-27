@@ -68,6 +68,20 @@ Each entry represents one physical bottle. Member removal permanently removes th
 
 The app includes a **254-record BarrelDex offline snapshot**. After pulling the latest code, restart with `npm start`; no account, live API call, or separate import is needed. Search is available for both cabinet bottles and tasting-flight pours.
 
+### Download the latest JSON automatically
+
+In the VS Code terminal, run:
+
+```sh
+npm run update:catalog
+```
+
+Then restart the app (`Ctrl+C`, followed by `npm start`) and refresh your browser. This command checks the provider's official `https://barreldex.com/data/bottles.json` download on demand; it does not scrape pages or run on a schedule. It uses Node's environment proxy support (use a current Node 24 release, 24.5+). TLS verification remains enabled.
+
+The updater validates HTTP status, JSON type, a 10 MB size limit, and bottle records/unique IDs before replacing the local catalog atomically. It has a 30-second request timeout and prevents concurrent updater runs. The previous local snapshot is saved under `data/catalog/backups/` when data changes; identical content produces no new backup. Download or validation failures preserve the previous catalog. Cabinet and tasting data are never touched. To restore an older snapshot, stop the app, run the import command below with a backup path and `--replace`, then restart.
+
+The download command's actual request was denied by this cloud environment's network proxy during development. Success/failure paths were verified using controlled responses; a live BarrelDex download has not been verified here. On your computer, it requires ordinary HTTPS access to `barreldex.com`. No API key is required by this code. There is no guarantee that the provider's newest published file contains current prices or every new whiskey release.
+
 ### Optional: update the catalog from another download
 
 The bundled snapshot lives in `catalog-data/barreldex.json`. To use a newer provider download locally, run:
