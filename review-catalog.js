@@ -41,7 +41,7 @@ export function buildReviewCatalog(text){
     const proofValues=[...proofs].sort((a,b)=>a-b),ageValues=[...ages].sort((a,b)=>a-b);
     const releaseYear=/^\d{4}$/.test(row['RELEASE YEAR'])?Number(row['RELEASE YEAR']):null;
     return {id:'reviews:'+createHash('sha256').update(key).digest('hex').slice(0,24),
-      name:parts.join(' '),brand:row.BRAND,distillery:'',supplier:'',
+      name:parts.join(' '),brand:row.BRAND,label:row.LABEL,expression:row.EXPRESSION,distillery:'',supplier:'',
       release:row['RELEASE/BATCH'],release_year:releaseYear,release_year_text:row['RELEASE YEAR'],
       selection:row['SELECTED BY/FOR']??'',barrel:row.BARREL??'',warehouse:row.WAREHOUSE??'',floor:row.FLOOR??'',rick:row.RICK??'',
       proof:proofValues.length===1?proofValues[0]:null,proof_values:proofValues,

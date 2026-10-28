@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { searchCatalog } from './catalog.js';
+import { searchCatalog, catalog } from './catalog.js';
 import { setupTastings, tastingStages } from './tasting.js';
 import { setupEvents } from './events.js';
 
@@ -20,7 +20,9 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
   const tastings=setupTastings(db);
   const events=setupEvents(db);
   const bottleColumns=new Set(db.prepare('PRAGMA table_info(bottles)').all().map(c=>c.name));
-  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
+  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
+  const catalogById=new Map(catalog.map(b=>[b.id,b]));
+  const withLabel=row=>({...row,label:row.label??catalogById.get(row.catalog_id)?.label??'',expression:row.expression??catalogById.get(row.catalog_id)?.expression??''});
   const send = (res, status, body) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(body)); };
   async function body(req) {
     let value=''; for await (const part of req) { value += part; if (value.length>65536) throw new Error('Request is too large.'); }
@@ -28,7 +30,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
   }
   function bottle(input) {
     const result = {};
-    for (const key of ['name','distillery','bourbon_notes','member_notes','release']) {
+    for (const key of ['name','distillery','bourbon_notes','member_notes','release','label','expression']) {
       if (input[key] != null && typeof input[key] !== 'string') throw new Error('Invalid text field.');
       result[key]=(input[key] || '').trim();
       if (result[key].length>10000) throw new Error('Text is too long.');
@@ -53,7 +55,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
   const handler = async (req,res) => {
     const url = new URL(req.url,'http://localhost');
     try {
-      if (url.pathname==='/api/state' && req.method==='GET') return send(res,200,{members:db.prepare('SELECT * FROM members ORDER BY name COLLATE NOCASE').all(),bottles:db.prepare('SELECT * FROM bottles ORDER BY created_at DESC,id DESC').all(),tastings:tastings.all(),tastingStages,events:events.all(),pours:events.pours()});
+      if (url.pathname==='/api/state' && req.method==='GET') return send(res,200,{members:db.prepare('SELECT * FROM members ORDER BY name COLLATE NOCASE').all(),bottles:db.prepare('SELECT * FROM bottles ORDER BY created_at DESC,id DESC').all().map(withLabel),tastings:tastings.all(),tastingStages,events:events.all(),pours:events.pours().map(withLabel)});
       if (url.pathname==='/api/events' && req.method==='POST') return send(res,201,events.create(await body(req)));
       const eventMatch=url.pathname.match(/^\/api\/events\/(\d+)$/);
       const eventPours=url.pathname.match(/^\/api\/events\/(\d+)\/pours$/);

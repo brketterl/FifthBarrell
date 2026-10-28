@@ -31,6 +31,12 @@ const localReviewsPath=new URL('./data/catalog/reviews.json',import.meta.url);
 const reviewsPath=process.env.REVIEW_CATALOG_PATH||(existsSync(localReviewsPath)?localReviewsPath:new URL('./catalog-data/reviews.json',import.meta.url));
 const reviewData=existsSync(reviewsPath)?JSON.parse(readFileSync(reviewsPath,'utf8')):{version:1,bottles:[]};
 if(reviewData.version!==1||!Array.isArray(reviewData.bottles)||reviewData.bottles.some(b=>typeof b.id!=='string'||!b.id.startsWith('reviews:')||typeof b.name!=='string'))throw new Error('Invalid review catalog; re-import the source CSV.');
+// Older local imports lack these fields. Recover them by stable ID without modifying user files.
+const bundledReviewPath=new URL('./catalog-data/reviews.json',import.meta.url);
+if(existsSync(bundledReviewPath)){
+  const labels=new Map(JSON.parse(readFileSync(bundledReviewPath,'utf8')).bottles.map(b=>[b.id,b]));
+  for(const b of reviewData.bottles){b.label??=labels.get(b.id)?.label??'';b.expression??=labels.get(b.id)?.expression??'';}
+}
 export const catalog=[...baseCatalog,...reviewData.bottles];
 export const catalogInfo={
   source:existsSync(path)?'BarrelDex (barreldex.com) · offline snapshot':'Curated starter catalog',

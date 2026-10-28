@@ -58,7 +58,7 @@ test('shared flights preserve independent tastings, validate scores, and survive
   try{
     await start();
     const alex=(await request('members','POST',{name:'Alex'})).data,jordan=(await request('members','POST',{name:'Jordan'})).data;
-    const b=(await request('bottles','POST',{name:'Shared bourbon',distillery:'Society Distillery',member_id:alex.id,proof:100,year:2026,rating:'Favorite',remaining:80})).data;
+    const b=(await request('bottles','POST',{name:'Shared bourbon',label:'Single Barrel',expression:'Rye',distillery:'Society Distillery',member_id:alex.id,proof:100,year:2026,rating:'Favorite',remaining:80})).data;
     assert.equal((await request('events','POST',{name:'Invalid date',event_date:'2026-02-30'})).status,400);
     const event=(await request('events','POST',{name:'Friday flight',event_date:'2026-10-27',location:'The table'})).data;
     const pour=(await request('events/'+event.id+'/pours','POST',{whiskey_name:'Ignored in favor of bottle label',bottle_id:b.id})).data;
@@ -77,7 +77,7 @@ test('shared flights preserve independent tastings, validate scores, and survive
     assert.equal(state.tastings.find(t=>t.id===first.data.id).flavors.palate.Sweetness,0);
     assert.equal(state.tastings.find(t=>t.id===second.data.id).flavors.palate,undefined);
     await stop();app=createApp(path);server=http.createServer(app.handler);await start();
-    state=(await request('state')).data;assert.equal(state.events.length,1);assert.equal(state.pours.length,2);assert.equal(state.tastings.length,2);
+    state=(await request('state')).data;assert.equal(state.events.length,1);assert.equal(state.pours.length,2);assert.equal(state.tastings.length,2);assert.equal(state.pours[0].label,'Single Barrel');assert.equal(state.pours[0].expression,'Rye');
     await request('bottles/'+b.id,'DELETE');state=(await request('state')).data;
     assert.equal(state.tastings.length,2);assert.equal(state.tastings[0].bottle_id,null);assert.equal(state.pours[0].whiskey_name,'Shared bourbon');
     await request('events/'+event.id,'DELETE');state=(await request('state')).data;

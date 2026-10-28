@@ -10,6 +10,8 @@ test('CSV import preserves batches and selections, stable IDs and ambiguous valu
   const rows=['Example,Barrel Proof,,C923,2023,133,12,,,BW-S','Example,Barrel Proof,,C923,2023,133,12,,,BW-S','Example,Barrel Proof,,B520,2020,127.2,12,,,BW-S','Example,Single Barrel,,1,2022-2024,100,6,"Shop, A",7,BW-S','Example,Single Barrel,,1,2022-2024,110,7,"Shop, A",7,BW-S','Example,Single Barrel,,01,2022-2024,100,6,"Shop, A",7,BW-S'];
   const result=buildReviewCatalog(header+'\r\n'+rows.join('\r\n'));
   assert.equal(result.source_rows,6);assert.equal(result.bottles.length,4);
+  assert.equal(result.bottles.find(b=>b.release==='C923').label,'Barrel Proof');
+  assert.equal(result.bottles.find(b=>b.release==='C923').expression,'');
   const ambiguous=result.bottles.find(b=>b.release==='1');assert.equal(ambiguous.proof,null);assert.equal(ambiguous.age_years,null);assert.deepEqual(ambiguous.proof_values,[100,110]);assert.equal(ambiguous.selection,'Shop, A');assert.equal(ambiguous.release_year,null);assert.equal(ambiguous.release_year_text,'2022-2024');
   const reverse=buildReviewCatalog(header+'\n'+[...rows].reverse().join('\n'));assert.deepEqual(result.bottles.map(b=>b.id).sort(),reverse.bottles.map(b=>b.id).sort());
   assert.ok(result.bottles.every(b=>!('REVIEWER' in b)&&!('score' in b)&&b.distillery===''));
