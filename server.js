@@ -64,6 +64,11 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
         return send(res,saved?201:404,saved||{error:'Event not found.'});
       }
       const pourMatch=url.pathname.match(/^\/api\/pours\/(\d+)$/);
+      const revealMatch=url.pathname.match(/^\/api\/pours\/(\d+)\/reveal$/);
+      if(revealMatch&&req.method==='PUT'){
+        const saved=events.reveal(Number(revealMatch[1]),await body(req));
+        return send(res,saved?200:404,saved||{error:'Pour not found.'});
+      }
       if ((eventMatch||pourMatch) && req.method==='DELETE') {
         const removed=eventMatch?events.remove(Number(eventMatch[1])):events.removePour(Number(pourMatch[1]));
         return send(res,removed?200:404,removed?{ok:true}:{error:'Event or pour not found.'});

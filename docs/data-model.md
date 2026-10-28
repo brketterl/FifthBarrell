@@ -12,7 +12,7 @@ The current prototype uses Node 24 and SQLite, with additive table creation on s
 
 Each member may rate each event pour once; the server rejects duplicates and permits edits. Another event supports another tasting of the same whiskey. Flavor intensity values are 0–5; omitted values are unassessed. SQL foreign keys preserve tasting snapshots when inventory bottles, pours, or events are deleted. Member deletion cascades to that member's private inventory/tasting records; it does not remove shared events.
 
-All current records are visible and editable by anyone with app access. This is not a secure blind-tasting system or a public multi-tenant service. Members using separate devices must connect to the same hosted server/database; separate local copies do not synchronize.
+All current records are visible and editable by anyone with app access. Blind events use late identity entry: actual whiskey identities are not stored until the reveal action. This is not an authenticated host-controlled or public multi-tenant service. Members using separate devices must connect to the same hosted server/database; separate local copies do not synchronize.
 
 ## Preferred catalog direction
 
@@ -22,4 +22,4 @@ The next catalog migration should introduce stable `expressions`, `releases`, an
 
 Import into staging first. Match by source ID, inspect duplicates/ambiguous releases, and preserve manual entries and user corrections. Store attribution with imported fields and expose it in the app. Do not merge outside review-derived flavor frequencies into member-measured intensity scores. The live catalog must remain optional so manual cabinet entries and flights continue working offline.
 
-Future event work can add authenticated host/member roles, attendance/invitations, server-enforced hidden identities and reveal state, and participant rankings. Those features are not implemented in the open-label prototype.
+Blind events now store anonymous sample names and a per-pour reveal state. The reveal transaction attaches actual identities to both the pour and its tasting snapshots, preserving scores and notes. Existing events migrate as open-label and existing pours as revealed. Future event work can add authenticated host/member roles, attendance/invitations, score locking, and participant rankings.

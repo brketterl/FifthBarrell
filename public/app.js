@@ -91,7 +91,7 @@ $('#members').onclick=async e=>{
   if(!confirm(`Remove ${owner(id)} and permanently delete their ${count} bottle${count===1?'':'s'} and ${tastingCount} tasting record${tastingCount===1?'':'s'}? This cannot be undone.`))return;
   try { await api('members/'+id,'DELETE'); await refresh(); toast('Member removed.'); } catch(e){toast(e.message);}
 };
-let selectedEventId='', tastingContext=null, pouringEventId=null;
+let selectedEventId='', tastingContext=null, pouringEventId=null, revealingPourId=null;
 const stageHelp={nose:'Pause before sipping. What aromas do you notice?',palate:'Take a small sip. Explore sweetness, fruit, wood, and spice.',finish:'After the sip, notice what lingers and for how long.',mouthfeel:'Notice texture and weight. Body: 0 = thin, 5 = full. Other descriptors: 0 = absent, 5 = very strong.'};
 const stageName=s=>s[0].toUpperCase()+s.slice(1);
 const localDate=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
@@ -108,15 +108,11 @@ function renderEvents() {
   if(!selected) $('#event-content').innerHTML='<div class="empty"><div class="empty-icon">◇</div><h2>Set the table for your first flight.</h2><p>Create an event, add the pours, then invite members to record their impressions here.</p></div>';
   else {
     const pours=state.pours.filter(p=>p.event_id===selected.id), tastings=state.tastings.filter(t=>pours.some(p=>p.id===t.event_pour_id));
-    $('#event-content').innerHTML=`<div class="event-banner"><div><div class="eyebrow">SOCIETY TASTING EVENT · ${escape(selected.event_date)}</div><h2>${escape(selected.name)}</h2><p>${escape(selected.location||'Location not specified')} · ${pours.length} pours · ${new Set(tastings.map(t=>t.member_id)).size} members tasted</p></div><div class="member-actions"><button class="primary" id="add-pour">＋ Add a pour</button><button class="danger" id="remove-event">Remove event</button></div></div><div class="flight-grid">${pours.map((p,i)=>{
+    $('#event-content').innerHTML=`<div class="event-banner"><div><div class="eyebrow">${selected.blind_mode?'BLIND TASTING EVENT':'SOCIETY TASTING EVENT'} · ${escape(selected.event_date)}</div><h2>${escape(selected.name)}</h2><p>${escape(selected.location||'Location not specified')} · ${pours.length} pours · ${new Set(tastings.map(t=>t.member_id)).size} members tasted</p></div><div class="member-actions"><button class="primary" id="add-pour">＋ Add a pour</button><button class="danger" id="remove-event">Remove event</button></div></div><div class="flight-grid">${pours.map((p,i)=>{
       const notes=tastings.filter(t=>t.event_pour_id===p.id),average=notes.length?(notes.reduce((sum,t)=>sum+t.score,0)/notes.length).toFixed(1):'—';
-      return `<article class="flight-card"><span class="eyebrow">POUR ${i+1}</span><h3>${escape(p.whiskey_name)}</h3>${p.label?'<p class="help">Label: '+escape(p.label)+(p.expression?' · '+escape(p.expression):'')+'</p>':''}<p class="help">${escape(p.distillery||'Distillery not recorded')}<br>${p.proof==null?'Proof not recorded':p.proof+' proof'}${p.release?' · '+escape(p.release):''}</p><div class="flight-score"><strong>${average}</strong><span>${notes.length?' / 10 · '+notes.length+' tasting'+(notes.length===1?'':'s'):'No tastings yet'}</span></div><div class="member-actions"><button class="primary" data-taste-pour="${p.id}">Taste this pour</button><button class="danger" data-remove-pour="${p.id}">Remove pour</button></div></article>`;
+      return `<article class="flight-card"><span class="eyebrow">POUR ${i+1}</span><h3>${escape(p.whiskey_name)}</h3>${p.blind_label?'<p class="help">'+escape(p.blind_label)+(p.revealed?' · Revealed':' · Identity not entered')+'</p>':''}${p.label?'<p class="help">Label: '+escape(p.label)+(p.expression?' · '+escape(p.expression):'')+'</p>':''}<p class="help">${escape(p.distillery||'Distillery not recorded')}<br>${p.proof==null?'Proof not recorded':p.proof+' proof'}${p.release?' · '+escape(p.release):''}</p><div class="flight-score"><strong>${average}</strong><span>${notes.length?' / 10 · '+notes.length+' tasting'+(notes.length===1?'':'s'):'No tastings yet'}</span></div><div class="member-actions"><button class="primary" data-taste-pour="${p.id}">Taste this pour</button>${selected.blind_mode&&!p.revealed?'<button class="secondary" data-reveal-pour="'+p.id+'">Enter bourbon & reveal</button>':''}<button class="danger" data-remove-pour="${p.id}">Remove pour</button></div></article>`;
     }).join('')||'<div class="empty"><h2>Choose your lineup.</h2><p>Add a pour from the cabinet or enter a whiskey manually.</p></div>'}</div>${pours.length?comparison(pours,tastings):''}`;
-    $('#add-pour').onclick=()=>{
-      pouringEventId=selected.id;const f=$('#pour-form');f.reset();
-      f.elements.bottle_id.innerHTML='<option value="">Enter a whiskey manually</option>'+state.bottles.map(b=>`<option value="${b.id}">${escape(b.name)} · ${escape(owner(b.member_id))}</option>`).join('');
-      pourLookup.reset();$('#pour-error').textContent='';$('#pour-dialog').showModal();
-    };
+    $('#add-pour').onclick=()=>showPourForm(selected);
     $('#remove-event').onclick=async()=>{
       if(!confirm(`Remove “${selected.name}” and its flight? Tasting records will remain in the journal without the event link.`))return;
       try{await api('events/'+selected.id,'DELETE');await refresh();toast('Event removed; tasting history preserved.');}catch(e){toast(e.message);}
@@ -128,7 +124,7 @@ function renderEvents() {
   const history=state.tastings.filter(t=>!$('#taster-filter').value||String(t.member_id)===$('#taster-filter').value);
   $('#tasting-history').innerHTML=history.length?history.map(t=>{
     const pour=state.pours.find(p=>p.id===t.event_pour_id),event=state.events.find(e=>e.id===pour?.event_id);
-    return `<article class="member-card tasting-card"><div class="eyebrow">${escape(t.tasted_on)} · ${escape(owner(t.member_id))}</div><h3>${escape(t.whiskey_name)}</h3><div class="journal-score">${t.score}<small> / 10 enjoyment</small></div><p class="help">${escape(event?.name||'Independent / archived tasting')}${t.release?' · '+escape(t.release):''}<br>${escape(t.setting)}</p>${Object.entries(state.tastingStages).map(([stage])=>`<details><summary>${stageName(stage)}</summary><p>${escape(t[stage+'_notes']||'No written notes.')}</p><p class="help">${Object.entries(t.flavors[stage]??{}).map(([name,value])=>`${escape(name)}: ${value}/5`).join(' · ')||'No intensities assessed.'}</p></details>`).join('')}<p class="journal-notes">${escape(t.notes)}</p><div class="member-actions"><button class="secondary" data-edit-tasting="${t.id}">Edit tasting</button><button class="danger" data-remove-tasting="${t.id}">Remove tasting</button></div></article>`;
+    return `<article class="member-card tasting-card"><div class="eyebrow">${escape(t.tasted_on)} · ${escape(owner(t.member_id))}</div><h3>${escape(t.whiskey_name)}</h3><div class="journal-score">${t.score}<small> / 10 enjoyment</small></div><p class="help">${escape(event?.name||'Independent / archived tasting')}${pour?.blind_label?' · '+escape(pour.blind_label)+(pour.revealed?' · Revealed':' · Blind'):''}${t.release?' · '+escape(t.release):''}<br>${escape(t.setting)}</p>${Object.entries(state.tastingStages).map(([stage])=>`<details><summary>${stageName(stage)}</summary><p>${escape(t[stage+'_notes']||'No written notes.')}</p><p class="help">${Object.entries(t.flavors[stage]??{}).map(([name,value])=>`${escape(name)}: ${value}/5`).join(' · ')||'No intensities assessed.'}</p></details>`).join('')}<p class="journal-notes">${escape(t.notes)}</p><div class="member-actions"><button class="secondary" data-edit-tasting="${t.id}">Edit tasting</button><button class="danger" data-remove-tasting="${t.id}">Remove tasting</button></div></article>`;
   }).join(''):'<div class="empty"><h2>The first impressions are yours.</h2><p>Record a tasting from a flight to start the journal.</p></div>';
 }
 function comparison(pours,tastings) {
@@ -147,13 +143,27 @@ $('#event-form').onsubmit=async e=>{
   e.preventDefault();const f=e.target;
   await submit(f,f.querySelector('[type=submit]'),$('#event-error'),async()=>{const result=await api('events','POST',Object.fromEntries(new FormData(f)));selectedEventId=String(result.id);toast('Event created. Add the first pour to your flight.');});
 };
+function showPourForm(event,reveal=null){
+  pouringEventId=event.id;revealingPourId=reveal?.id??null;
+  const f=$('#pour-form');f.reset();
+  const blind=Boolean(event.blind_mode&&!reveal);
+  f.elements.bottle_id.innerHTML='<option value="">Enter a whiskey manually</option>'+state.bottles.map(b=>`<option value="${b.id}">${escape(b.name)} · ${escape(owner(b.member_id))}</option>`).join('');
+  pourLookup.reset();
+  $('#pour-identity-lookup').hidden=blind;$('#pour-identity-fields').hidden=blind;
+  $('#pour-title').textContent=reveal?'Reveal '+reveal.blind_label:blind?'Add an anonymous sample':'Add a pour to the flight';
+  $('#pour-name-label').textContent=blind?'Sample name *':'Whiskey name *';
+  f.querySelector('[type=submit]').textContent=reveal?'Reveal bourbon':blind?'Add sample':'Add pour';
+  if(blind)f.elements.whiskey_name.value='Sample '+(state.pours.filter(p=>p.event_id===event.id).length+1);
+  $('#pour-error').textContent='';$('#pour-dialog').showModal();
+}
 $('#pour-form').elements.bottle_id.onchange=e=>{
   const b=state.bottles.find(b=>String(b.id)===e.target.value),f=$('#pour-form');pourLookup.reset();f.elements.catalog_id.value=b?.catalog_id??'';
   for(const [key,value] of Object.entries({label:b?.label??'',expression:b?.expression??'',whiskey_name:b?.name??'',distillery:b?.distillery??'',release:b?.year??'',proof:b?.proof??''}))f.elements[key].value=value;
 };
 $('#pour-form').onsubmit=async e=>{
   e.preventDefault();const f=e.target;
-  await submit(f,f.querySelector('[type=submit]'),$('#pour-error'),async()=>{await api('events/'+pouringEventId+'/pours','POST',Object.fromEntries(new FormData(f)));toast('Pour added to the flight.');});
+  if(revealingPourId&&!confirm('Reveal this bourbon to everyone and attach its identity to the saved tasting records?'))return;
+  await submit(f,f.querySelector('[type=submit]'),$('#pour-error'),async()=>{await api(revealingPourId?'pours/'+revealingPourId+'/reveal':'events/'+pouringEventId+'/pours',revealingPourId?'PUT':'POST',Object.fromEntries(new FormData(f)));toast(revealingPourId?'Bourbon revealed. Tasting scores and notes preserved.':'Pour added to the flight.');});
 };
 function taste(pour,existing=null) {
   if(!state.members.length){toast('Add society members before recording their tastings.');view(true);memberDialog();return;}
@@ -174,6 +184,7 @@ $('#tasting-form').onsubmit=async e=>{
 };
 $('#event-content').onclick=async e=>{
   const button=e.target.closest('[data-taste-pour]');if(button){taste(state.pours.find(p=>p.id===Number(button.dataset.tastePour)));return;}
+  const reveal=e.target.closest('[data-reveal-pour]');if(reveal){const pour=state.pours.find(p=>p.id===Number(reveal.dataset.revealPour));showPourForm(state.events.find(event=>event.id===pour.event_id),pour);return;}
   const remove=e.target.closest('[data-remove-pour]');if(!remove||!confirm('Remove this pour from the flight? Its tasting history will remain in the journal.'))return;
   try{await api('pours/'+remove.dataset.removePour,'DELETE');await refresh();toast('Pour removed; tastings preserved.');}catch(e){toast(e.message);}
 };

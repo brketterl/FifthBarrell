@@ -24,7 +24,15 @@ This server app is separate from the single-file browser prototype previously su
 4. For each pour, choose **Taste this pour**, select the member, and record nose, palate, finish, mouthfeel, and overall enjoyment.
 5. Compare member enjoyment scores and descriptor averages. View or edit individual records in the tasting journal; filter the journal by member.
 
-Descriptor intensity is 0–5, with blank meaning not assessed. Enjoyment is a separate 1–10 score. Averages include assessed values only and show sample counts. Each member has one editable tasting per event pour; create another event to repeat a flight. Whiskey names and notes are visible throughout: these are open-label flights, not secure blind tastings. Member choice is not authenticated and there are no host-only permissions.
+Descriptor intensity is 0–5, with blank meaning not assessed. Enjoyment is a separate 1–10 score. Averages include assessed values only and show sample counts. Each member has one editable tasting per event pour; create another event to repeat a flight. Events support open-label and blind tastings. Member choice is not authenticated and there are no host-only permissions.
+
+### Blind tasting events
+
+Choose **Blind tasting — reveal at the end** when creating an event. Add anonymous samples such as “Sample 1” or “Glass A”; do not use identifying names. The form does not collect the actual whiskey, cabinet link, proof, or catalog entry at this stage, and the server rejects those identity fields when adding a blind sample. Members record their guided tastings under the anonymous name.
+
+After tasting, choose **Enter bourbon & reveal** on each sample. Select the actual whiskey from the catalog/cabinet or enter its details manually, then confirm **Reveal bourbon**. The sample's actual identity becomes visible in the flight and tasting journal. Existing scores, flavor measurements, dates, and notes stay intact; the original sample name remains alongside the revealed identity. Each pour is revealed separately. This is a one-way step; identities cannot be hidden again or changed through the reveal action. Existing open-label events are unchanged.
+
+This is a shared, trust-based reveal workflow: anyone with app access can trigger reveal, and tastings remain editable afterward. It does not enforce host roles, a minimum number of tasters, locked scores, or an automatic end time. Before reveal, the actual identity is not stored or returned by the app, so state responses/JSON exports contain only anonymous samples. Avoid writing identifying information in shared event titles or tasting notes. Scores and notes remain visible to other members during blind tasting.
 
 Tasting does not change the bottle's remaining amount. Pour identities are snapshots: editing or removing an inventory bottle does not rewrite tasting history. Removing an event/pour preserves its tasting records as archived journal entries. Removing a member permanently removes that member's inventory and tastings, after confirmation. **Export society data** downloads a JSON export of members, bottles, events, pours, and tastings; importing/restoring that JSON is not implemented.
 
