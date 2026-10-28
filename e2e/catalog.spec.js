@@ -10,7 +10,7 @@ test('catalog fills cabinet and flight details without inventing distillery, yea
     await expect(f.locator('[name=distillery]')).toHaveValue(record.distillery);await expect(f.locator('[name=proof]')).toHaveValue(String(record.proof));
     await expect(f.locator('[name=year]')).toHaveValue('2025');await expect(f.locator('[name=price]')).toHaveValue('61.25');
     await expect(f.locator('[name=age_years]')).toHaveValue(record.age_years==null?'':String(record.age_years));
-    await expect(page.locator('#catalog-reference')).toContainText(catalog.source);
+    await expect(page.locator('#catalog-reference')).toContainText(record.source);
     await f.getByRole('button',{name:'Save bottle'}).click();
     let state=await (await request.get('/api/state')).json();const b=state.bottles.find(b=>b.member_id===member.id);expect(b.catalog_id).toBe(record.id);expect(b.price).toBe(61.25);expect(b.year).toBe(2025);expect(b.age_years).toBe(record.age_years??null);
     await page.locator('#events-nav').click();await page.locator('#add-event').click();const ef=page.locator('#event-dialog');await ef.getByLabel('Event name').fill('Catalog flight '+info.project.name);await ef.getByRole('button',{name:'Create event',exact:true}).click();await page.locator('#add-pour').click();

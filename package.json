@@ -9,7 +9,8 @@
     "test": "node --test test/*.test.js",
     "test:browser": "playwright test",
     "import:catalog": "node scripts/import-catalog.js",
-    "update:catalog": "node --use-env-proxy scripts/update-catalog.js"
+    "update:catalog": "node --use-env-proxy scripts/update-catalog.js",
+    "import:reviews": "node scripts/import-reviews.js"
   },
   "engines": {
     "node": ">=24"

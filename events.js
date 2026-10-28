@@ -25,7 +25,7 @@ export function setupEvents(db) {
       if(input.bottle_id!=null&&input.bottle_id!=='') {
         const bottle=db.prepare('SELECT * FROM bottles WHERE id=?').get(Number(input.bottle_id));
         if(!bottle) throw new Error('Cabinet bottle not found.');
-        b={whiskey_name:bottle.name,distillery:bottle.distillery,release:String(bottle.year??''),proof:bottle.proof,bottle_id:bottle.id,catalog_id:bottle.catalog_id??null};
+        b={whiskey_name:bottle.name,distillery:bottle.distillery,release:[bottle.release,bottle.year].filter(Boolean).join(' · '),proof:bottle.proof,bottle_id:bottle.id,catalog_id:bottle.catalog_id??null};
       }
       return {id:Number(db.prepare('INSERT INTO pours(event_id,bottle_id,whiskey_name,distillery,release,proof,catalog_id) VALUES (?,?,?,?,?,?,?)').run(eventId,b.bottle_id,b.whiskey_name,b.distillery,b.release,b.proof,b.catalog_id).lastInsertRowid)};
     },

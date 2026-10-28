@@ -20,7 +20,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
   const tastings=setupTastings(db);
   const events=setupEvents(db);
   const bottleColumns=new Set(db.prepare('PRAGMA table_info(bottles)').all().map(c=>c.name));
-  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
+  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
   const send = (res, status, body) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(body)); };
   async function body(req) {
     let value=''; for await (const part of req) { value += part; if (value.length>65536) throw new Error('Request is too large.'); }
@@ -28,7 +28,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
   }
   function bottle(input) {
     const result = {};
-    for (const key of ['name','distillery','bourbon_notes','member_notes']) {
+    for (const key of ['name','distillery','bourbon_notes','member_notes','release']) {
       if (input[key] != null && typeof input[key] !== 'string') throw new Error('Invalid text field.');
       result[key]=(input[key] || '').trim();
       if (result[key].length>10000) throw new Error('Text is too long.');
@@ -76,7 +76,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
         return send(res,removed?200:404,removed?{ok:true}:{error:'Tasting not found.'});
       }
       if (url.pathname==='/api/catalog' && req.method==='GET') {
-        return send(res,200,searchCatalog(url.searchParams.get('q')||''));
+        return send(res,200,searchCatalog(url.searchParams.get('q')||'',{source:url.searchParams.get('source')||'',offset:url.searchParams.get('offset')||0}));
       }
       if (url.pathname==='/api/members' && req.method==='POST') {
         const input=await body(req); const name=typeof input.name==='string'?input.name.trim():'';
