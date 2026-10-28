@@ -70,7 +70,9 @@ The app includes a **254-record BarrelDex offline snapshot**. After pulling the 
 
 ### Expand lookup using the review CSV
 
-BarrelDex remains the base catalog. To add bottle/release candidates from the uploaded American Whiskey Review Database CSV, put `reviews.csv` beside `package.json` and run:
+BarrelDex remains the base catalog. The app now bundles **17,485 bottle/release candidates** derived from the user-supplied American Whiskey Review Database CSV, in addition to 254 BarrelDex entries. Pull the latest code and restart the app: no separate import is needed.
+
+To optionally use a newer CSV as a local override, put `reviews.csv` beside `package.json` and run:
 
 ```sh
 npm run import:reviews -- reviews.csv
@@ -83,7 +85,7 @@ The provided 48,545 review rows generated **17,485 conservative bottle/release c
 
 Both lookup forms have an **All sources / BarrelDex / Review CSV** filter and Previous/Next results. Search brand/expression plus batch/year or selection/barrel details. Each result identifies its source. Specific review batches can prefill the bottle's batch and a missing release year; a manually entered year is preserved. Cabinet batch details persist through edits and carry into event pours. This is a flat search across expressions/releases, not a hierarchy of expression pages. Cross-source matches are not automatically merged: there is no verified link between a BarrelDex expression and a CSV release.
 
-The CSV and its generated records stay in ignored local storage while its reuse terms remain unconfirmed. They are not bundled in the public repository; each local installation needs the CSV import above. Attribution links to the original [Review Explorer](https://american-whiskey-review-database.streamlit.app/Review_Explorer). No reviewer names, scores, review text, or external posts are imported or scraped. An original synthetic CSV is used for tests. Removing the local review catalog restores BarrelDex-only lookup. `REVIEW_CATALOG_PATH` can select another generated catalog file and is used to isolate browser tests.
+The user confirmed the provider permits developer data use. The derived bottle metadata is bundled in `catalog-data/reviews.json`, with provenance in `catalog-data/ATTRIBUTION.md`. No specific standardized license is claimed for this source. A local import in `data/catalog/reviews.json` overrides the bundled copy; remove that local override to return to the bundled snapshot. Attribution links to the original [Review Explorer](https://american-whiskey-review-database.streamlit.app/Review_Explorer). No reviewer names, scores, review text, or external posts are imported or scraped. An original synthetic CSV is used for tests. The optional local override and original CSV remain ignored by Git. Existing inventory and tasting records are not modified by catalog updates. `REVIEW_CATALOG_PATH` can select another generated catalog file and is used to isolate browser tests.
 
 ### Download the latest JSON automatically
 

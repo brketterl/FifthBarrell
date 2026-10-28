@@ -27,7 +27,8 @@ const baseCatalog = existsSync(path)
   }))
   : starter.map((b,i)=>({...b,id:'starter:'+i,prices:[],sources:[],flags:[]}));
 for(const b of baseCatalog)Object.assign(b,{source_key:existsSync(path)?'barreldex':'starter',source:existsSync(path)?'BarrelDex (barreldex.com) · offline snapshot':'Curated starter catalog',url:existsSync(path)?'https://barreldex.com':null,license:existsSync(path)?'https://creativecommons.org/licenses/by/4.0/':null});
-const reviewsPath=process.env.REVIEW_CATALOG_PATH||new URL('./data/catalog/reviews.json',import.meta.url);
+const localReviewsPath=new URL('./data/catalog/reviews.json',import.meta.url);
+const reviewsPath=process.env.REVIEW_CATALOG_PATH||(existsSync(localReviewsPath)?localReviewsPath:new URL('./catalog-data/reviews.json',import.meta.url));
 const reviewData=existsSync(reviewsPath)?JSON.parse(readFileSync(reviewsPath,'utf8')):{version:1,bottles:[]};
 if(reviewData.version!==1||!Array.isArray(reviewData.bottles)||reviewData.bottles.some(b=>typeof b.id!=='string'||!b.id.startsWith('reviews:')||typeof b.name!=='string'))throw new Error('Invalid review catalog; re-import the source CSV.');
 export const catalog=[...baseCatalog,...reviewData.bottles];
