@@ -1,0 +1,20 @@
+import {test,expect} from '@playwright/test';
+test('label photo recognition, review, manual fallback and saving without barcode services',async({page})=>{
+ test.setTimeout(120000);const errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push(r.url()));
+ await page.goto('/');const session=await (await page.request.get('/api/auth/session')).json();
+ if(session.setup)await page.request.post('/api/auth/setup',{data:{name:'Society Host',email:'host@example.com',password:'pour'}});else await page.request.post('/api/auth/login',{data:{email:'host@example.com',password:'pour'}});
+ await page.reload();await expect(page.locator('#auth-dialog')).not.toBeVisible();await page.locator('#home-bottle').click();
+ await expect(page.locator('#bottle-form [name=barcode]')).toHaveCount(0);await expect(page.locator('#start-camera')).toHaveCount(0);
+ await page.locator('#bottle-form [name=price]').fill('42');await page.getByRole('button',{name:'Look up a label photo',exact:true}).click();
+ const data=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=1300;c.height=430;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,c.width,c.height);x.fillStyle='black';x.font='bold 80px Arial';x.fillText('WILD TURKEY 101',60,130);x.font='40px Arial';x.fillText('KENTUCKY STRAIGHT BOURBON',60,230);x.fillText('101 PROOF',60,320);return c.toDataURL('image/png').split(',')[1];});
+ await page.locator('#label-photo').setInputFiles({name:'label.png',mimeType:'image/png',buffer:Buffer.from(data,'base64')});
+ await expect(page.locator('#label-review')).toBeVisible({timeout:60000});await expect(page.locator('#label-text')).toHaveValue(/WILD TURKEY/i);
+ await expect(page.locator('#scan-results')).toContainText('Wild Turkey 101',{timeout:15000});await expect(page.locator('#bottle-form [name=name]')).toHaveValue('');
+ await page.locator('#scan-results button').filter({hasText:'Wild Turkey 101'}).first().click();await expect(page.locator('#bottle-form [name=name]')).toHaveValue(/Wild Turkey 101/i);await expect(page.locator('#bottle-form [name=price]')).toHaveValue('42');
+ await page.locator('#open-scan').click();await page.locator('#label-photo').setInputFiles({name:'label.png',mimeType:'image/png',buffer:Buffer.from(data,'base64')});await expect(page.locator('#label-review')).toBeVisible({timeout:60000});
+ await page.locator('#label-text').fill('zzzznotawhiskeyzzzz\n101 PROOF');await page.locator('#search-label').click();await expect(page.locator('#scan-status')).toContainText('No close catalog match');
+ await page.locator('#label-name').fill('Member label '+test.info().project.name);await page.locator('#use-label').click();await expect(page.locator('#bottle-form [name=proof]')).toHaveValue('101');await expect(page.locator('#bottle-form [name=price]')).toHaveValue('42');
+ await page.locator('#bottle-form [type=submit]').click();await expect(page.locator('#bottle-dialog')).not.toBeVisible();
+ const state=await (await page.request.get('/api/state')).json();expect(state.bottles.some(b=>b.name==='Member label '+test.info().project.name&&b.proof===101&&b.price===42)).toBe(true);
+ expect(requests.filter(url=>!url.startsWith('http://127.0.0.1:3107')&&!url.startsWith('blob:')&&!url.startsWith('data:'))).toEqual([]);expect(requests.some(url=>url.includes('/api/barcode')||url.includes('zxing'))).toBe(false);expect(errors).toEqual([]);
+});

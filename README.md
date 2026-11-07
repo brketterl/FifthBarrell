@@ -30,6 +30,26 @@ npm start
 
 This server app is separate from the single-file browser prototype previously supplied in chat. Browser-only cabinet data is not automatically imported into SQLite.
 
+## Label photo lookup (testing trial)
+
+Open **Add a bottle → Look up a label photo → Photograph label**. Take or select a clear label photo. Review and edit the recognized text, choose a possible catalog match, or correct the proposed name and use the label details as a starting point. Verify the expression, proof, and batch before saving the bottle. Catalog search and manual entry remain available.
+
+Photos are read on the device using self-hosted Tesseract.js and an English language model. No image is uploaded; only recognized text is sent to search the offline catalog. The first lookup downloads the OCR assets and may take longer on phones. Clear, straight-on photos work best. Photos over 15 MB are rejected, and accepted photos are resized locally before OCR. Stylized text, glare, and fine print can still be misread. A clearly printed “proof” value may be extracted for review when using label details directly.
+
+Barcode scanning and external barcode lookup are removed from this trial. Existing saved barcode data is retained and is not changed when bottles are edited. No external barcode provider, account, API key, or lookup allowance is involved in label photo lookup.
+
+Automated desktop/mobile checks exercise the actual OCR engine with generated images, catalog matching, review-before-fill, editable no-match fallback, and the bottle save workflow. Labels should also be tested on physical devices before production approval.
+
+## Cabinet photos (testing trial)
+
+In **Add a bottle** or **Edit bottle**, choose **Find a photo** to search Wikimedia Commons using the bottle name and release. You can edit the search terms if the exact release is not found. Results show candidates, their creators, and source links; choose **Use this photo** to preview one. Coverage varies, so **Upload a photo** also accepts your own bottle image. **Remove photo** returns to the bottle illustration. Changes apply only when you save the bottle; cancelling preserves the saved photo.
+
+The first search source is Wikimedia Commons and accepts identifiable public-domain, CC0, CC BY, and CC BY-SA images. Saved search photos retain creator, source, license links, and a resize/conversion notice in the cabinet and bottle detail. The source's metadata must be checked for an exact bottle/release match. No paid image-search account or API key is required. This is a private society app; personal uploads are also supported.
+
+Uploads are resized in the browser (15 MB input limit). The server accepts at most 6 MB, validates and decodes image bytes with Sharp, limits decoded pixels, strips embedded metadata, and stores a resized WebP in SQLite on the same persistent disk as the collection. No member-supplied remote URLs are fetched. Search imports require server-signed candidates, use a fixed Wikimedia host allowlist, reject redirects, and enforce size/time limits. Photos require sign-in to view, and members can assign their own uploads or search imports. Administrators can manage all photos. Unused drafts older than one day are cleaned up on later uploads/imports; photos attached to bottles are retained. Include the database when backing up photos.
+
+Validation covers saving, replacement/removal, cancellation, persistence across restart, creator/license credit, candidate tampering, image validation, and member ownership. Live Wikimedia requests are blocked by this Codex workspace's outbound policy; automated search/import tests use provider fixtures. Check search coverage from the test site before production approval.
+
 ## Society tasting events
 
 1. Add society members in **Society members**.

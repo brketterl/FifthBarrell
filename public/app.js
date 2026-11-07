@@ -10,7 +10,13 @@ async function api(path, method='GET', data) {
 function toast(message) { $('#toast').textContent=message; $('#toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('#toast').hidden=true,5000); }
 const initials = name => name.split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase();
 const owner = id => state.members.find(m=>m.id===id)?.name || 'Unknown member';
+function photoCredit(photo){
+  if(!photo)return '';
+  if(photo.kind==='upload')return '<span>Member-provided photo</span>';
+  return `${escape(photo.artist)} · <a href="${escape(photo.source_url)}" target="_blank" rel="noopener noreferrer">Source</a>${photo.license_url?' · <a href="'+escape(photo.license_url)+'" target="_blank" rel="noopener noreferrer">'+escape(photo.license)+'</a>':' · '+escape(photo.license)} · ${escape(photo.changes)}`;
+}
 function art(b) {
+  if(b.photo)return `<img class="cabinet-photo" data-bottle-photo="${b.id}" src="${escape(b.photo.url)}" alt="${escape(b.name)} bottle" loading="lazy">`;
   const colors=['#9e6128','#79512d','#a46b25','#86603b']; const color=colors[b.id%colors.length];
   return `<svg viewBox="0 0 110 170" aria-hidden="true"><ellipse cx="55" cy="161" rx="33" ry="5" fill="#55442c" opacity=".12"/><rect x="43" y="8" width="24" height="17" rx="3" fill="#28382e"/><path d="M44 25h22v32c0 9 19 11 19 25v68c0 7-5 10-12 10H37c-7 0-12-3-12-10V82c0-14 19-16 19-25Z" fill="${color}" stroke="#6c4c2b" stroke-width="1.5"/><path d="M32 87v60c0 4 2 6 6 6" fill="none" stroke="#fff" opacity=".21" stroke-width="4"/><rect x="31" y="84" width="48" height="51" rx="2" fill="#ede6ce"/><path d="M36 90h38v39H36z" fill="none" stroke="#b59862"/><text x="55" y="109" font-family="Georgia" font-size="16" text-anchor="middle" fill="#344233">V</text><text x="55" y="120" font-family="Arial" font-size="4.5" letter-spacing=".6" text-anchor="middle" fill="#736443">FIFTH BARREL</text><rect x="44" y="30" width="21" height="5" fill="#c4a769"/></svg>`;
 }
@@ -30,7 +36,7 @@ function render() {
   $('#stat-members').textContent=state.members.length;
   $('#collection-heading').textContent=member?`${owner(Number(member))}’s cabinet`:'The society’s collection';
   $('#collection-count').textContent=`${bottles.length} bottle${bottles.length===1?'':'s'}`;
-  $('#bottles').innerHTML=bottles.map(b=>`<article class="bottle-card" tabindex="0" role="button" aria-label="View ${escape(b.name)}" data-bottle="${b.id}"><div class="bottle-art"><span class="badge">${b.rating==='Favorite'?'☆ ':''}${escape(b.rating)}</span>${art(b)}</div><div class="card-body"><div class="distillery">${escape(b.distillery||'Distillery not specified')}</div><h3>${escape(b.name)}</h3>${b.label?'<p class="bottle-meta">Label: '+escape(b.label)+(b.expression?' · '+escape(b.expression):'')+'</p>':''}<div class="bottle-meta">${b.proof==null?'Proof not recorded':b.proof+' PROOF'} &nbsp;·&nbsp; ${b.year||'Year not recorded'}${b.release?' · '+escape(b.release):''}</div><div class="card-rule"></div><div class="card-owner"><span><span class="avatar">${escape(initials(owner(b.member_id)))}</span>${escape(owner(b.member_id))}</span><span>${b.price==null?'—':money(b.price)}</span></div><div class="remaining-line"><span>LEFT IN THE BOTTLE</span><span>${b.remaining}%</span></div>${meter(b.remaining)}</div></article>`).join('');
+  $('#bottles').innerHTML=bottles.map(b=>`<article class="bottle-card" tabindex="0" role="button" aria-label="View ${escape(b.name)}" data-bottle="${b.id}"><div class="bottle-art"><span class="badge">${b.rating==='Favorite'?'☆ ':''}${escape(b.rating)}</span>${art(b)}</div>${b.photo?'<div class="cabinet-photo-credit">'+photoCredit(b.photo)+'</div>':''}<div class="card-body"><div class="distillery">${escape(b.distillery||'Distillery not specified')}</div><h3>${escape(b.name)}</h3>${b.label?'<p class="bottle-meta">Label: '+escape(b.label)+(b.expression?' · '+escape(b.expression):'')+'</p>':''}<div class="bottle-meta">${b.proof==null?'Proof not recorded':b.proof+' PROOF'} &nbsp;·&nbsp; ${b.year||'Year not recorded'}${b.release?' · '+escape(b.release):''}</div><div class="card-rule"></div><div class="card-owner"><span><span class="avatar">${escape(initials(owner(b.member_id)))}</span>${escape(owner(b.member_id))}</span><span>${b.price==null?'—':money(b.price)}</span></div><div class="remaining-line"><span>LEFT IN THE BOTTLE</span><span>${b.remaining}%</span></div>${meter(b.remaining)}</div></article>`).join('');
   $('#empty').hidden=bottles.length>0;
   $('#empty h2').textContent=state.bottles.length?'No bottles on this shelf.':'A good collection starts with one bottle.';
   $('#empty p').textContent=state.bottles.length?'Try a different member, preference, or search.':'Add your members, then give your first bottle a place on the shelf.';
@@ -49,9 +55,9 @@ function memberDialog() { $('#member-form').reset(); $('#member-error').textCont
 $('#add-member').onclick=memberDialog;
 function bottleDialog(b=null) {
   if (!state.members.length) { toast('Add a member first, then add their bottle.'); view(true); memberDialog(); return; }
-  editing=b?.id??null; const form=$('#bottle-form'); form.reset();
+  editing=b?.id??null; const form=$('#bottle-form'); form.dispatchEvent(new Event('scanner-reset'));form.reset();form.dispatchEvent(new CustomEvent('photo-reset',{detail:b?.photo??null}));
   form.elements.member_id.innerHTML=state.members.map(m=>`<option value="${m.id}">${escape(m.name)}</option>`).join('');
-  if (b) for (const key of ['name','member_id','distillery','proof','year','rating','remaining','price','bourbon_notes','member_notes','catalog_id','age_years','size_ml','release','label','expression']) form.elements[key].value=b[key]??'';
+  if (b) for (const key of ['name','member_id','distillery','proof','year','rating','remaining','price','bourbon_notes','member_notes','catalog_id','age_years','size_ml','release','label','expression','photo_id']) form.elements[key].value=b[key]??'';
   else if(currentUser)form.elements.member_id.value=currentUser.member_id;
   else if ($('#member-filter').value) form.elements.member_id.value=$('#member-filter').value;
   $('#bottle-title').textContent=b?'Edit bottle':'Add a bottle'; $('#remaining-output').value=form.elements.remaining.value+'%';
@@ -74,7 +80,7 @@ $('#bottle-form').onsubmit=async e=>{
 
 function detail(id) {
   const b=state.bottles.find(b=>b.id===id); if(!b)return;
-  $('#detail').innerHTML=`<div class="dialog-header"><div><div class="eyebrow">${escape(b.distillery||'THE COLLECTION')}</div><h2>${escape(b.name)}</h2></div><button class="icon-button" id="close-detail" aria-label="Close">×</button></div><div class="bottle-art detail-art"><span class="badge">${escape(b.rating)}</span>${art(b)}</div><div class="details-grid"><div><small>Member</small><strong>${escape(owner(b.member_id))}</strong></div><div><small>Label name</small><strong>${escape(b.label||'Not recorded')}</strong></div><div><small>Expression</small><strong>${escape(b.expression||'Not recorded')}</strong></div><div><small>Batch / release</small><strong>${escape(b.release||'—')}</strong></div><div><small>Proof</small><strong>${b.proof??'—'}</strong></div><div><small>Age statement</small><strong>${b.age_years==null?'—':b.age_years+' years'}</strong></div><div><small>Bottle size</small><strong>${b.size_ml==null?'—':b.size_ml+' mL'}</strong></div><div><small>Release year</small><strong>${b.year??'—'}</strong></div><div><small>Purchase price</small><strong>${b.price==null?'—':money(b.price)}</strong></div><div><small>Amount left</small><strong>${b.remaining}%</strong></div></div>${meter(b.remaining)}<div class="notes"><h3>Bourbon / tasting notes</h3><p>${escape(b.bourbon_notes||'No tasting notes yet.')}</p></div><div class="notes"><h3>Member notes</h3><p>${escape(b.member_notes||'No member notes yet.')}</p></div><div class="detail-actions"><button class="danger" id="delete-bottle">Remove bottle</button><button class="primary" id="edit-bottle">Edit bottle</button></div>`;
+  $('#detail').innerHTML=`<div class="dialog-header"><div><div class="eyebrow">${escape(b.distillery||'THE COLLECTION')}</div><h2>${escape(b.name)}</h2></div><button class="icon-button" id="close-detail" aria-label="Close">×</button></div><div class="bottle-art detail-art"><span class="badge">${escape(b.rating)}</span>${art(b)}</div>${b.photo?'<p class="cabinet-photo-credit">'+photoCredit(b.photo)+'</p>':''}<div class="details-grid"><div><small>Member</small><strong>${escape(owner(b.member_id))}</strong></div><div><small>Label name</small><strong>${escape(b.label||'Not recorded')}</strong></div><div><small>Expression</small><strong>${escape(b.expression||'Not recorded')}</strong></div><div><small>Batch / release</small><strong>${escape(b.release||'—')}</strong></div><div><small>Proof</small><strong>${b.proof??'—'}</strong></div><div><small>Age statement</small><strong>${b.age_years==null?'—':b.age_years+' years'}</strong></div><div><small>Bottle size</small><strong>${b.size_ml==null?'—':b.size_ml+' mL'}</strong></div><div><small>Release year</small><strong>${b.year??'—'}</strong></div><div><small>Purchase price</small><strong>${b.price==null?'—':money(b.price)}</strong></div><div><small>Amount left</small><strong>${b.remaining}%</strong></div></div>${meter(b.remaining)}<div class="notes"><h3>Bourbon / tasting notes</h3><p>${escape(b.bourbon_notes||'No tasting notes yet.')}</p></div><div class="notes"><h3>Member notes</h3><p>${escape(b.member_notes||'No member notes yet.')}</p></div><div class="detail-actions"><button class="danger" id="delete-bottle">Remove bottle</button><button class="primary" id="edit-bottle">Edit bottle</button></div>`;
   $('#close-detail').onclick=()=>$('#detail-dialog').close();
   $('#edit-bottle').onclick=()=>{ $('#detail-dialog').close(); bottleDialog(b); };
   $('#delete-bottle').onclick=async()=>{
@@ -83,8 +89,8 @@ function detail(id) {
   };
   $('#detail-dialog').showModal();
 }
-$('#bottles').onclick=e=>{ const card=e.target.closest('[data-bottle]'); if(card)detail(Number(card.dataset.bottle)); };
-$('#bottles').onkeydown=e=>{ if(['Enter',' '].includes(e.key)){ const card=e.target.closest('[data-bottle]'); if(card){e.preventDefault();detail(Number(card.dataset.bottle));} } };
+$('#bottles').onclick=e=>{ if(e.target.closest('a'))return;const card=e.target.closest('[data-bottle]'); if(card)detail(Number(card.dataset.bottle)); };
+$('#bottles').onkeydown=e=>{ if(e.target.closest('a'))return;if(['Enter',' '].includes(e.key)){ const card=e.target.closest('[data-bottle]'); if(card){e.preventDefault();detail(Number(card.dataset.bottle));} } };
 $('#members').onclick=async e=>{
   const cabinet=e.target.closest('[data-cabinet]'); if(cabinet){$('#member-filter').value=cabinet.dataset.cabinet;view(false);render();return;}
   const remove=e.target.closest('[data-remove-member]'); if(!remove)return;
@@ -308,3 +314,16 @@ $('#members').addEventListener('click',async e=>{
   try{await api('auth/role','POST',{member_id:member.id,role});await refresh();toast(role==='admin'?'Administrator access granted.':'Member role updated.');}
   catch(e){toast(e.message);button.disabled=false;}
 });
+
+$('#bottle-form').addEventListener('scan-details',e=>{
+  const data=e.detail,form=$('#bottle-form');
+  bottleLookup.reset();
+  for(const key of ['catalog_id','name','distillery','proof','age_years','size_ml','release','label','expression'])form.elements[key].value=data[key]??'';
+  form.elements.year.value='';
+  toast('Suggested details added. Check the label, proof, and batch before saving.');
+});
+
+document.addEventListener('error',e=>{
+ const img=e.target;if(!img.matches?.('[data-bottle-photo]'))return;
+ const fallback=document.createElement('div');fallback.innerHTML=art({id:Number(img.dataset.bottlePhoto)});img.replaceWith(fallback.firstElementChild);
+},true);

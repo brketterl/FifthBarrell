@@ -9,10 +9,12 @@ import { fileURLToPath } from 'node:url';
 import { searchCatalog, catalog } from './catalog.js';
 import { setupTastings, tastingStages } from './tasting.js';
 import { setupEvents } from './events.js';
+import {searchLabel} from './label-search.js';
+import {setupPhotos,readPhotoBytes} from './photos.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const ratings = ['Favorite', 'Daily Drinker', 'Just OK', 'Do not Buy Again'];
-export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false, accessPassword, requireAuth = false, publicOrigin} = {}) {
+export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false, accessPassword, requireAuth = false, publicOrigin, photoFetch} = {}) {
   const security=requestSecurity(publicOrigin);
   if(requireAuth&&!accessPassword)throw new Error('ACCESS_PASSWORD is required when REQUIRE_AUTH=true.');
   const digest=value=>createHash('sha256').update(value).digest();
@@ -26,18 +28,19 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
     remaining REAL NOT NULL, price REAL, bourbon_notes TEXT NOT NULL DEFAULT '', member_notes TEXT NOT NULL DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP);`);
   const tastings=setupTastings(db);
   const events=setupEvents(db);
+  const photos=setupPhotos(db,photoFetch);
   const bottleColumns=new Set(db.prepare('PRAGMA table_info(bottles)').all().map(c=>c.name));
-  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
+  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT'],['photo_id','TEXT REFERENCES photos(id) ON DELETE SET NULL']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
   const auth=setupAuth(db,security);
   const catalogById=new Map(catalog.map(b=>[b.id,b]));
-  const withLabel=row=>({...row,label:row.label??catalogById.get(row.catalog_id)?.label??'',expression:row.expression??catalogById.get(row.catalog_id)?.expression??''});
+  const withLabel=row=>({...row,...('photo_id' in row?{photo:photos.info(row.photo_id)}:{}),label:row.label??catalogById.get(row.catalog_id)?.label??'',expression:row.expression??catalogById.get(row.catalog_id)?.expression??''});
   const send = (res, status, body) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(body)); };
   async function body(req) {
     if(req.savedBody)return req.savedBody;
     let value=''; for await (const part of req) { value += part; if (value.length>65536) throw new Error('Request is too large.'); }
     try { return JSON.parse(value); } catch { throw new Error('Please send valid JSON.'); }
   }
-  function bottle(input) {
+  function bottle(input,user,existingPhoto) {
     const result = {};
     for (const key of ['name','distillery','bourbon_notes','member_notes','release','label','expression']) {
       if (input[key] != null && typeof input[key] !== 'string') throw new Error('Invalid text field.');
@@ -46,6 +49,11 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
     }
     if (!result.name) throw new Error('Bottle name is required.');
     if(input.catalog_id!=null&&typeof input.catalog_id!=='string')throw new Error('Invalid catalog reference.');
+    if(Object.hasOwn(input,'photo_id')){
+      if(input.photo_id!==null&&typeof input.photo_id!=='string')throw Error('Choose a valid bottle photo.');
+      result.photo_id=input.photo_id||null;
+      if(result.photo_id){const photoOwner=photos.owner(result.photo_id);if(photoOwner==null||(!user||user.role!=='admin'&&photoOwner!==user.member_id&&existingPhoto!==result.photo_id))throw Error('Choose your own uploaded photo or an image from search.');}
+    }
     result.catalog_id=input.catalog_id?.trim()||null;
     if(result.catalog_id?.length>250)throw new Error('Catalog reference is too long.');
     if (!ratings.includes(input.rating)) throw new Error('Choose a bottle preference.');
@@ -94,6 +102,13 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
           }
         }
       }
+      if(url.pathname.startsWith('/api/photos/')&&!user)return send(res,401,{error:'Please sign in to manage bottle photos.'});
+      if(url.pathname==='/api/photos/search'&&req.method==='POST')return send(res,200,await photos.search((await body(req)).query));
+      if(url.pathname==='/api/photos/upload'&&req.method==='POST')return send(res,201,await photos.upload(await readPhotoBytes(req),user.member_id));
+      if(url.pathname==='/api/photos/import'&&req.method==='POST')return send(res,201,await photos.import((await body(req)).token,user.member_id));
+      const photoMatch=url.pathname.match(/^\/api\/photos\/([a-f0-9-]{36})$/);
+      if(photoMatch&&['GET','HEAD'].includes(req.method)){const photo=photos.get(photoMatch[1]);if(!photo)return send(res,404,{error:'Photo not found.'});res.writeHead(200,{'Content-Type':'image/webp','Cache-Control':'private, max-age=86400','X-Content-Type-Options':'nosniff'});return res.end(req.method==='HEAD'?undefined:photo.data);}
+      if(url.pathname==='/api/catalog/label' &&req.method==='POST')return send(res,200,{results:searchLabel((await body(req)).text)});
       if (url.pathname==='/api/state' && req.method==='GET') return send(res,200,{members:db.prepare('SELECT m.*,a.role FROM members m LEFT JOIN accounts a ON a.member_id=m.id ORDER BY m.name COLLATE NOCASE').all(),bottles:db.prepare('SELECT * FROM bottles ORDER BY created_at DESC,id DESC').all().map(withLabel),tastings:tastings.all(),tastingStages,events:events.all(),pours:events.pours().map(withLabel)});
       if (url.pathname==='/api/events' && req.method==='POST') {const saved=events.create(await body(req));if(user)db.prepare('UPDATE events SET host_member_id=? WHERE id=?').run(user.member_id,saved.id);return send(res,201,saved);}
       const eventMatch=url.pathname.match(/^\/api\/events\/(\d+)$/);
@@ -138,7 +153,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
       }
       const match=url.pathname.match(/^\/api\/bottles\/(\d+)$/);
       if ((url.pathname==='/api/bottles' && req.method==='POST') || (match && req.method==='PUT')) {
-        const b=bottle(await body(req)); const keys=Object.keys(b);
+        const b=bottle(await body(req),user,match?db.prepare('SELECT photo_id FROM bottles WHERE id=?').get(Number(match[1]))?.photo_id:null); const keys=Object.keys(b);
         if (match) {
           const changed=db.prepare(`UPDATE bottles SET ${keys.map(k=>`${k}=?`).join(',')} WHERE id=?`).run(...keys.map(k=>b[k]),Number(match[1])).changes;
           if (!changed) return send(res,404,{error:'Bottle not found.'});
@@ -153,9 +168,17 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
       }
       if (url.pathname.startsWith('/api/')) return send(res,404,{error:'Not found.'});
       if (!['GET','HEAD'].includes(req.method)) return send(res,405,{error:'Method not allowed.'});
-      const files={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css','/logo.svg':'logo.svg'};
+      const files={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css','/logo.svg':'logo.svg','/scan.js':'scan.js','/photos.js':'photos.js'};
+      const vendor={
+        '/vendor/tesseract.js':'tesseract.js/dist/tesseract.min.js',
+        '/vendor/worker.min.js':'tesseract.js/dist/worker.min.js',
+        '/vendor/lang/eng.traineddata.gz':'@tesseract.js-data/eng/4.0.0/eng.traineddata.gz'
+      };
+      const core=url.pathname.match(/^\/vendor\/core\/(tesseract-core(?:-simd|-relaxedsimd)?(?:-lstm)?\.wasm(?:\.js)?)$/);
+      const asset=vendor[url.pathname]||(core?'tesseract.js-core/'+core[1]:null);
+      if(asset){res.writeHead(200,{'Content-Type':asset.endsWith('.js')?'text/javascript':asset.endsWith('.wasm')?'application/wasm':'application/octet-stream','Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; object-src 'none'"});return res.end(req.method==='HEAD'?undefined:readFileSync(join(root,'node_modules',asset)));}
       const file=files[url.pathname]; if (!file) return send(res,404,{error:'Not found.'});
-      res.writeHead(200,{'Content-Type':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
+      res.writeHead(200,{'Content-Type':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
       res.end(req.method==='HEAD'?undefined:readFileSync(join(root,'public',file)));
     } catch(error) { send(res,400,{error:error.message}); }
   };
