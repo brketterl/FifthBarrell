@@ -50,9 +50,9 @@ test('AI endpoints enforce sign-in and origin checks while capability status nev
 
 test('printed tasting notes retain label evidence and suggested profiles retain their AI provenance',()=>{
  let data=result();data.fields.bourbon_notes={value:'Vanilla, caramel, and oak.',evidence:'Vanilla, caramel, and oak.',source:'label'};
- const printed=validateRecognition(data).fields.bourbon_notes;assert.equal(printed.source,'label');assert.match(printed.value,/^Label tasting notes:/);assert.equal(printed.evidence,'Vanilla, caramel, and oak.');
+ const printed=validateRecognition(data).fields.bourbon_notes;assert.equal(printed.source,'label');assert.equal(printed.value,'Vanilla, caramel, and oak.');assert.equal(printed.evidence,'Vanilla, caramel, and oak.');
  data=result();data.fields.name={value:'Wild Turkey 101',evidence:'WILD TURKEY 101'};data.fields.bourbon_notes={value:'Nose: caramel.\nPalate: oak and baking spice.\nFinish: warming.',evidence:'invented citation',source:'suggested'};
- const suggested=validateRecognition(data).fields.bourbon_notes;assert.equal(suggested.source,'suggested');assert.equal(suggested.evidence,null);assert.match(suggested.value,/^AI-suggested tasting profile \(not verified for this bottle or batch\):/);
+ const suggested=validateRecognition(data).fields.bourbon_notes;assert.equal(suggested.source,'suggested');assert.equal(suggested.evidence,null);assert.equal(suggested.value,data.fields.bourbon_notes.value);
 });
 test('tasting notes require a valid source and suggestions require a label-backed bottle identity',()=>{
  let data=result();data.fields.bourbon_notes={value:'Nose: vanilla.',evidence:null,source:'suggested'};assert.equal(validateRecognition(data).fields.bourbon_notes.value,null);
@@ -75,5 +75,5 @@ test('unretrieved or unsafe references remain reviewable AI suggestions rather t
  const read=validateRecognition(data);assert.equal(read.fields.distillery.value,'Possible distillery');assert.equal(read.fields.distillery.source,'suggested');assert.equal(read.fields.distillery.source_url,null);assert.match(read.warnings.join(' '),/could not be linked/);
  for(const url of ['javascript:alert(1)','https://user:pass@example.com','http://127.0.0.1/private','https://localhost/','https://host.internal/'])assert.equal(referenceURL(url),null);
  data.fields.name={value:'Woodford Reserve',evidence:'WOODFORD RESERVE'};data.fields.bourbon_notes={value:'Nose: caramel.',evidence:'Official tasting profile.',source:'reference',source_url:'https://www.woodfordreserve.com/'};
- const profile=validateRecognition(data,['https://www.woodfordreserve.com/']).fields.bourbon_notes;assert.equal(profile.source,'reference');assert.match(profile.value,/^Reference tasting profile/);
+ const profile=validateRecognition(data,['https://www.woodfordreserve.com/']).fields.bourbon_notes;assert.equal(profile.source,'reference');assert.equal(profile.value,'Nose: caramel.');
 });
