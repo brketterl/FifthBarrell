@@ -1,6 +1,7 @@
 const $ = s => document.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2}).format(n);
+let currentUser=null;
 let state={members:[],bottles:[],events:[],pours:[],tastings:[],tastingStages:{}}, editing=null, lookupVersion=0, toastTimer;
 async function api(path, method='GET', data) {
   const response=await fetch('/api/'+path,{method,headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});
@@ -36,11 +37,11 @@ function render() {
   $('#empty-add').hidden=state.bottles.length>0;
   $('#members').innerHTML=state.members.length?state.members.map(m=>{
     const bottles=state.bottles.filter(b=>b.member_id===m.id);
-    return `<article class="member-card"><span class="avatar">${escape(initials(m.name))}</span><h3>${escape(m.name)}</h3><p>${bottles.length} bottles · ${money(bottles.reduce((s,b)=>s+(b.price??0),0))}<br>${bottles.filter(b=>b.rating==='Favorite').length} favorites</p><div class="member-actions"><button class="secondary" data-cabinet="${m.id}">View cabinet</button><button class="danger" data-remove-member="${m.id}">Remove member</button></div></article>`;
+    return `<article class="member-card"><span class="avatar">${escape(initials(m.name))}</span><h3>${escape(m.name)}</h3><p class="member-role">${m.role==='admin'?'Administrator':m.role==='member'?'Member':'Account not yet created'}</p><p>${bottles.length} bottles · ${money(bottles.reduce((s,b)=>s+(b.price??0),0))}<br>${bottles.filter(b=>b.rating==='Favorite').length} favorites</p><div class="member-actions"><button class="secondary" data-cabinet="${m.id}">View cabinet</button><button class="danger" data-remove-member="${m.id}">Remove member</button></div></article>`;
   }).join(''):'<div class="empty"><h2>There’s a seat at the table.</h2><p>Add your first society member to start collecting.</p></div>';
 }
-async function refresh() { state=await api('state'); render(); renderEvents(); }
-function view(members) { $('#events-view').hidden=true; $('#events-nav').classList.remove('active'); $('#cabinet-view').hidden=members; $('#members-view').hidden=!members; $('#members-nav').classList.toggle('active',members); $('#cabinet-nav').classList.toggle('active',!members); }
+async function refresh() { if(currentUser)currentUser=(await api('auth/session')).user;state=await api('state'); render(); renderEvents(); renderHome(); applyPermissions(); }
+function view(members) { $('#home-view').hidden=true;$('#home-nav').classList.remove('active'); $('#events-view').hidden=true; $('#events-nav').classList.remove('active'); $('#cabinet-view').hidden=members; $('#members-view').hidden=!members; $('#members-nav').classList.toggle('active',members); $('#cabinet-nav').classList.toggle('active',!members); }
 $('#cabinet-nav').onclick=()=>view(false); $('#members-nav').onclick=()=>view(true);
 for (const id of ['search','member-filter','rating-filter','sort']) $('#'+id).addEventListener(id==='search'?'input':'change',render);
 document.querySelectorAll('.close').forEach(b=>b.onclick=()=>b.closest('dialog').close());
@@ -51,6 +52,7 @@ function bottleDialog(b=null) {
   editing=b?.id??null; const form=$('#bottle-form'); form.reset();
   form.elements.member_id.innerHTML=state.members.map(m=>`<option value="${m.id}">${escape(m.name)}</option>`).join('');
   if (b) for (const key of ['name','member_id','distillery','proof','year','rating','remaining','price','bourbon_notes','member_notes','catalog_id','age_years','size_ml','release','label','expression']) form.elements[key].value=b[key]??'';
+  else if(currentUser)form.elements.member_id.value=currentUser.member_id;
   else if ($('#member-filter').value) form.elements.member_id.value=$('#member-filter').value;
   $('#bottle-title').textContent=b?'Edit bottle':'Add a bottle'; $('#remaining-output').value=form.elements.remaining.value+'%';
   bottleLookup.reset(); $('#bottle-error').textContent=''; $('#bottle-dialog').showModal();
@@ -96,6 +98,7 @@ const stageHelp={nose:'Pause before sipping. What aromas do you notice?',palate:
 const stageName=s=>s[0].toUpperCase()+s.slice(1);
 const localDate=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 $('#events-nav').onclick=()=>{
+  $('#home-view').hidden=true;$('#home-nav').classList.remove('active');
   $('#cabinet-view').hidden=true;$('#members-view').hidden=true;$('#events-view').hidden=false;
   for(const id of ['cabinet-nav','members-nav']) $('#'+id).classList.remove('active');
   $('#events-nav').classList.add('active');
@@ -170,10 +173,11 @@ function taste(pour,existing=null) {
   tastingContext={pour,existing};const f=$('#tasting-form');f.reset();
   f.elements.member_id.innerHTML=state.members.map(m=>`<option value="${m.id}">${escape(m.name)}</option>`).join('');
   f.elements.tasted_on.value=existing?.tasted_on||state.events.find(e=>e.id===pour?.event_id)?.event_date||localDate();
+  if(currentUser)f.elements.member_id.value=currentUser.member_id;
   if(existing)for(const key of ['member_id','score','setting','notes'])f.elements[key].value=existing[key]??'';
   $('#tasting-title').textContent=existing?'Edit tasting':'Taste this pour';
   $('#tasting-whiskey').textContent=(pour||existing).whiskey_name;
-  $('#guided-stages').innerHTML=Object.entries(state.tastingStages).map(([stage,names],i)=>`<fieldset class="tasting-stage"><legend>${i+1}. ${stageName(stage)}</legend><p class="help">${stageHelp[stage]}</p><div class="descriptor-grid">${names.map(name=>`<label>${escape(name)}<select data-stage="${stage}" data-descriptor="${escape(name)}"><option value="">Not assessed</option>${[0,1,2,3,4,5].map(n=>`<option value="${n}"${existing?.flavors[stage]?.[name]===n?' selected':''}>${n}${n===0?' · Absent':n===5?' · Very strong':''}</option>`).join('')}</select></label>`).join('')}</div><label>Your ${stage} notes<textarea name="${stage}_notes" rows="2" maxlength="10000">${escape(existing?.[stage+'_notes']??'')}</textarea></label></fieldset>`).join('');
+  $('#guided-stages').innerHTML=Object.entries(state.tastingStages).map(([stage,names],i)=>`<fieldset class="tasting-stage"><legend>${i+1}. ${stageName(stage)}</legend><p class="help">${stageHelp[stage]}</p><details><summary>Explore flavor intensities (optional)</summary><div class="descriptor-grid">${names.map(name=>`<label>${escape(name)}<select data-stage="${stage}" data-descriptor="${escape(name)}"><option value="">Not assessed</option>${[0,1,2,3,4,5].map(n=>`<option value="${n}"${existing?.flavors[stage]?.[name]===n?' selected':''}>${n}${n===0?' · Absent':n===5?' · Very strong':''}</option>`).join('')}</select></label>`).join('')}</div></details><label>Your ${stage} notes<textarea name="${stage}_notes" rows="2" maxlength="10000">${escape(existing?.[stage+'_notes']??'')}</textarea></label></fieldset>`).join('');
   $('#tasting-error').textContent='';$('#tasting-dialog').showModal();
 }
 $('#tasting-form').onsubmit=async e=>{
@@ -229,4 +233,78 @@ const pourLookup=catalogLookup('#pour-lookup','#pour-lookup-results','#pour-cata
   if(b.release)f.elements.release.value=b.release;
   toast('Catalog whiskey selected. Confirm the batch and proof for this pour.');
 });
-refresh().catch(e=>{ $('#empty').hidden=false; $('#empty h2').textContent='The cabinet could not be loaded.'; $('#empty p').textContent='Please refresh to try again. '+e.message; $('#empty-add').hidden=true; });
+initialize().catch(e=>{ $('#empty').hidden=false; $('#empty h2').textContent='The cabinet could not be loaded.'; $('#empty p').textContent='Please refresh to try again. '+e.message; $('#empty-add').hidden=true; });
+
+function home(){for(const id of ['cabinet','members','events']){$('#'+id+'-view').hidden=true;$('#'+id+'-nav').classList.remove('active');}$('#home-view').hidden=false;$('#home-nav').classList.add('active');}
+$('#home-nav').onclick=home;
+$('#home-tasting').onclick=()=>$('#events-nav').click();
+$('#my-cabinet').onclick=()=>{view(false);$('#member-filter').value=currentUser?.member_id??'';render();};
+$('#home-bottle').onclick=()=>bottleDialog();
+$('#home-host').onclick=()=>{$('#events-nav').click();$('#add-event').click();};
+$('#home-journal').onclick=()=>{$('#events-nav').click();$('#taster-filter').value=currentUser?.member_id??'';renderEvents();$('#tasting-history').scrollIntoView({behavior:'smooth'});};
+function renderHome(){
+  $('#welcome-copy').textContent=currentUser?`Welcome, ${currentUser.name}. Your next great pour starts here.`:'Your bottles, your palate, our society.';
+  const upcoming=state.events.filter(e=>e.event_date>=localDate()).sort((a,b)=>a.event_date.localeCompare(b.event_date));
+  const events=upcoming.length?upcoming:state.events.slice(0,3);
+  $('#home-events').innerHTML=events.length?events.map(e=>`<article class="member-card"><div class="eyebrow">${escape(e.event_date)} · ${e.blind_mode?'BLIND FLIGHT':'OPEN LABEL'}</div><h3>${escape(e.name)}</h3><p>${escape(e.location||'Location to be arranged')} · ${state.pours.filter(p=>p.event_id===e.id).length} pours</p><button class="secondary" data-open-event="${e.id}">Take a seat →</button></article>`).join(''):'<div class="empty"><h2>The next gathering starts with you.</h2><p>Host your first tasting and build a flight together.</p></div>';
+}
+$('#home-events').onclick=e=>{const button=e.target.closest('[data-open-event]');if(button){selectedEventId=button.dataset.openEvent;renderEvents();applyPermissions();$('#events-nav').click();}};
+function applyPermissions(){
+  if(!currentUser)return;
+  const admin=currentUser.role==='admin';
+  $('#account-label').textContent=currentUser.name+' · '+(admin?'Society administrator':'Society member');$('#sign-out').hidden=false;$('#my-profile').hidden=false;$('#add-member').hidden=!admin;
+  for(const select of [$('#bottle-form').elements.member_id,$('#tasting-form').elements.member_id]){if(!admin){select.innerHTML=`<option value="${currentUser.member_id}">${escape(currentUser.name)}</option>`;}}
+  document.querySelectorAll('[data-remove-member]').forEach(b=>b.hidden=!admin||state.members.find(m=>m.id===Number(b.dataset.removeMember))?.role==='admin');
+  if(admin)document.querySelectorAll('[data-cabinet]').forEach(b=>{
+    const member=state.members.find(m=>m.id===Number(b.dataset.cabinet));
+    if(!member?.role){if(!b.parentElement.querySelector('[data-invite]'))b.insertAdjacentHTML('afterend',`<button class="secondary" data-invite="${b.dataset.cabinet}">Create sign-in invite</button>`);}
+    else if(!b.parentElement.querySelector('[data-role-member]')){
+      const lastAdmin=member.role==='admin'&&state.members.filter(m=>m.role==='admin').length===1;
+      b.insertAdjacentHTML('afterend',`<button class="secondary" data-role-member="${member.id}" data-role="${member.role==='admin'?'member':'admin'}" ${lastAdmin?'disabled title="The society must keep at least one administrator."':''}>${member.role==='admin'?'Make member':'Make administrator'}</button>`);
+    }
+  });
+  const selected=state.events.find(e=>String(e.id)===selectedEventId),host=admin||selected?.host_member_id===currentUser.member_id;
+  for(const selector of ['#add-pour','#remove-event','[data-remove-pour]','[data-reveal-pour]'])document.querySelectorAll(selector).forEach(b=>b.hidden=!host);
+  for(const selector of ['[data-edit-tasting]','[data-remove-tasting]'])document.querySelectorAll(selector).forEach(b=>{const id=Number(b.dataset.editTasting||b.dataset.removeTasting);b.hidden=!admin&&state.tastings.find(t=>t.id===id)?.member_id!==currentUser.member_id;});
+  if(selected){const pours=state.pours.filter(p=>p.event_id===selected.id),done=state.tastings.filter(t=>t.member_id===currentUser.member_id&&pours.some(p=>p.id===t.event_pour_id));$('#event-content .event-progress')?.remove();$('#event-content').insertAdjacentHTML('afterbegin',`<p class="event-progress">Your flight: ${done.length} of ${pours.length} pours tasted · Start with the lowest proof, take your time, and revisit with a few drops of water.</p>`);}
+}
+$('#members').addEventListener('click',async e=>{const b=e.target.closest('[data-invite]');if(!b)return;try{const invite=await api('auth/invite','POST',{member_id:Number(b.dataset.invite)});$('#invite-link').value=new URL(invite.url,location.origin).href;$('#invite-dialog').showModal();}catch(e){toast(e.message);}});
+let authMode='login',inviteToken='';
+async function initialize(){
+ const session=await api('auth/session');currentUser=session.user;inviteToken=new URLSearchParams(location.hash.slice(1)).get('invite')||'';
+ if(!currentUser){authMode=session.setup?'setup':inviteToken?'join':'login';$('#auth-title').textContent=authMode==='setup'?'Welcome to the society.':authMode==='join'?'Your seat is waiting.':'Welcome back.';$('#auth-copy').textContent=authMode==='setup'?'Create the first administrator account. Set this up before sharing the app.':authMode==='join'?'Create your personal sign-in with a password of your choice.':'Sign in to your cabinet, tasting notes, and society gatherings.';$('#auth-name').hidden=authMode!=='setup';$('#auth-profile').hidden=authMode!=='setup';if(authMode==='setup'){const existing=await api('state');$('#auth-form').elements.member_id.innerHTML='<option value="">Create a new profile</option>'+existing.members.map(m=>`<option value="${m.id}">${escape(m.name)}</option>`).join('');}$('#auth-form').querySelector('[type=submit]').textContent=authMode==='login'?'Sign in':'Create my account';$('#auth-dialog').showModal();return;}
+ await refresh();
+}
+$('#auth-dialog').addEventListener('cancel',e=>e.preventDefault());
+$('#auth-form').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('[type=submit]');button.disabled=true;try{await api('auth/'+authMode,'POST',{...Object.fromEntries(new FormData(e.target)),token:inviteToken});history.replaceState(null,'',location.pathname);$('#auth-dialog').close();await initialize();home();}catch(e){$('#auth-error').textContent=e.message;}finally{button.disabled=false;}};
+$('#sign-out').onclick=async()=>{try{await api('auth/logout','POST',{});location.reload();}catch(e){toast(e.message);}};
+// Apply ownership controls after renders and when opening a form.
+const originalRenderEvents=renderEvents;renderEvents=function(){originalRenderEvents();applyPermissions();};
+const originalBottleDialog=bottleDialog;bottleDialog=function(b=null){originalBottleDialog(b);applyPermissions();};
+const originalTaste=taste;taste=function(pour,existing=null){const own=currentUser&&state.tastings.find(t=>t.event_pour_id===pour?.id&&t.member_id===currentUser.member_id);originalTaste(pour,existing||own);applyPermissions();};
+const originalDetail=detail;detail=function(id){originalDetail(id);if(currentUser&&currentUser.role!=='admin'&&state.bottles.find(b=>b.id===id)?.member_id!==currentUser.member_id){$('#delete-bottle').hidden=true;$('#edit-bottle').hidden=true;}};
+
+$('#my-profile').onclick=()=>{
+  if(!currentUser)return;
+  const form=$('#profile-form');form.reset();form.elements.name.value=currentUser.name;form.elements.email.value=currentUser.email;
+  $('#profile-error').textContent='';$('#profile-dialog').showModal();
+};
+$('#profile-form').onsubmit=async e=>{
+  e.preventDefault();const form=e.target,button=form.querySelector('[type=submit]'),error=$('#profile-error');error.textContent='';
+  const data=Object.fromEntries(new FormData(form));
+  if(data.new_password!==data.confirm_password){error.textContent='New passwords do not match.';return;}
+  if((data.new_password||data.email.trim().toLowerCase()!==currentUser.email)&&!data.current_password){error.textContent='Enter your current password to change your sign-in details.';return;}
+  delete data.confirm_password;button.disabled=true;
+  try{const result=await api('auth/profile','POST',data);currentUser=result.user;form.reset();await refresh();$('#profile-dialog').close();toast('Your profile has been updated.');}
+  catch(e){error.textContent=e.message;}finally{button.disabled=false;}
+};
+$('#profile-dialog').addEventListener('close',()=>$('#profile-form').reset());
+
+$('#members').addEventListener('click',async e=>{
+  const button=e.target.closest('[data-role-member]');if(!button)return;
+  const member=state.members.find(m=>m.id===Number(button.dataset.roleMember)),role=button.dataset.role;
+  if(!confirm(role==='admin'?`Make ${member.name} an administrator? They will be able to manage society members, all cabinets, tasting events, and member roles.`:`Make ${member.name} a regular member? They will keep their own cabinet, notes, and ability to host tastings.`))return;
+  button.disabled=true;
+  try{await api('auth/role','POST',{member_id:member.id,role});await refresh();toast(role==='admin'?'Administrator access granted.':'Member role updated.');}
+  catch(e){toast(e.message);button.disabled=false;}
+});

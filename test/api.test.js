@@ -8,7 +8,7 @@ import { createApp } from '../server.js';
 
 test('society lifecycle, bottle validation, persistence, lookup, and member removal', async()=>{
   const dir=mkdtempSync(join(tmpdir(),'fifth-barrel-test-')); const path=join(dir,'test.sqlite');
-  let app=createApp(path); let server=http.createServer(app.handler);
+  let app=createApp(path,{allowUnconfigured:true}); let server=http.createServer(app.handler);
   async function start(){ await new Promise(r=>server.listen(0,'127.0.0.1',r)); }
   async function stop(){ await new Promise(r=>server.close(r)); app.close(); }
   const request=async(route,method='GET',data)=>{
@@ -32,7 +32,7 @@ test('society lifecycle, bottle validation, persistence, lookup, and member remo
     assert.equal((await request('bottles/'+saved.data.id,'PUT',{...bottle,remaining:25,member_notes:'Updated notes.'})).status,200);
     let state=(await request('state')).data; assert.equal(state.bottles.length,2);
     assert.equal(state.bottles.find(b=>b.id===saved.data.id).remaining,25);
-    await stop(); app=createApp(path); server=http.createServer(app.handler); await start();
+    await stop(); app=createApp(path,{allowUnconfigured:true}); server=http.createServer(app.handler); await start();
     state=(await request('state')).data; assert.equal(state.bottles.length,2); assert.equal(state.members.length,2);
     assert.equal(state.bottles.find(b=>b.id===saved.data.id).member_notes,'Updated notes.');
     const lookup=(await request('catalog?q=eagle')).data; assert.match(lookup.results[0].name,/^Eagle Rare 10/); assert.ok(lookup.total>=12);assert.ok(lookup.results[0].id);
@@ -48,7 +48,7 @@ test('society lifecycle, bottle validation, persistence, lookup, and member remo
 
 test('shared flights preserve independent tastings, validate scores, and survive inventory removal',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'fifth-barrel-events-')),path=join(dir,'society.sqlite');
-  let app=createApp(path),server=http.createServer(app.handler);
+  let app=createApp(path,{allowUnconfigured:true}),server=http.createServer(app.handler);
   const start=()=>new Promise(r=>server.listen(0,'127.0.0.1',r));
   const stop=async()=>{await new Promise(r=>server.close(r));app.close();};
   const request=async(route,method='GET',data)=>{
@@ -76,7 +76,7 @@ test('shared flights preserve independent tastings, validate scores, and survive
     let state=(await request('state')).data;assert.equal(state.bottles[0].remaining,80);assert.equal(state.tastings.length,2);
     assert.equal(state.tastings.find(t=>t.id===first.data.id).flavors.palate.Sweetness,0);
     assert.equal(state.tastings.find(t=>t.id===second.data.id).flavors.palate,undefined);
-    await stop();app=createApp(path);server=http.createServer(app.handler);await start();
+    await stop();app=createApp(path,{allowUnconfigured:true});server=http.createServer(app.handler);await start();
     state=(await request('state')).data;assert.equal(state.events.length,1);assert.equal(state.pours.length,2);assert.equal(state.tastings.length,2);assert.equal(state.pours[0].label,'Single Barrel');assert.equal(state.pours[0].expression,'Rye');
     await request('bottles/'+b.id,'DELETE');state=(await request('state')).data;
     assert.equal(state.tastings.length,2);assert.equal(state.tastings[0].bottle_id,null);assert.equal(state.pours[0].whiskey_name,'Shared bourbon');

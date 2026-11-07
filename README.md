@@ -2,6 +2,20 @@
 
 A virtual whiskey cabinet and society tasting table with member management, individual and combined cabinets, guided tasting flights, member comparisons, and tasting history.
 
+## Member sign-in and getting started
+
+On first launch, create the administrator account before sharing the app. You can attach it to an existing member profile to preserve their bottles and tasting history. This initial setup must happen in a trusted environment: the first person to complete setup becomes administrator.
+
+Administrators add members in **Society members**, then choose **Create sign-in invite** and share the single-use link privately. Each member chooses their own email and password (required, with no character-count restriction). Invitations attach accounts to existing profiles without duplicating collections. Passwords use salted scrypt hashes; sessions use HttpOnly, SameSite cookies and expire after seven days. Render’s `RENDER_EXTERNAL_URL` sets the trusted public origin automatically, so HTTPS requests remain valid when Render terminates TLS. Other reverse proxies must set `PUBLIC_ORIGIN` to the exact public origin (for example, `https://bourbon.example.com`). HTTPS public origins automatically use Secure session cookies. `PUBLIC_ORIGIN` overrides the Render URL for custom domains. Forwarded headers are not trusted to choose the allowed origin. Password recovery and email delivery are not yet implemented; invitations are shared manually and do not expire until used or replaced.
+
+Administrators can use **Society members → Make administrator** to promote a member who has created an account. **Make member** removes administrator access; at least one administrator must remain. Role changes apply to existing sessions on their next request. Members without accounts must first accept a sign-in invitation.
+
+**My profile** lets signed-in members edit their display name, email, and password. Email/password changes require the current password and sign out other devices while keeping the current device signed in. Name changes update the existing member profile, preserving cabinet ownership and tasting history.
+
+The gathering place leads to your cabinet, event hosting, and your journal. Members can view the society collection and shared notes, edit their own bottles and tastings, and host events. Only an event’s host or an administrator can manage its flight or reveal blind samples. Administrators can manage other members’ records; administrator profiles cannot be deleted. Existing events without a host are managed by the administrator. Tasting entries and scores are shared with signed-in members, including before a blind reveal.
+
+The SVG brand asset is a vector rendition of the supplied logo, not the original artwork.
+
 ## Get the files on your computer
 
 From the GitHub repository, use **Code → Download ZIP**, extract it, and open the extracted folder in Visual Studio Code. Install Node.js 24 or newer. Open **Terminal → New Terminal** in the folder containing `package.json`, run `npm start`, leave the terminal open, and visit `http://localhost:3000` in your browser. You do not need to install dependencies just to run the app.
@@ -21,10 +35,10 @@ This server app is separate from the single-file browser prototype previously su
 1. Add society members in **Society members**.
 2. Open **Tasting events**, create an event, and set its date and location.
 3. Add an ordered flight from cabinet bottles or manually entered whiskey. Batch/release and proof are stored with each pour.
-4. For each pour, choose **Taste this pour**, select the member, and record nose, palate, finish, mouthfeel, and overall enjoyment.
+4. For each pour, choose **Taste this pour**, record your own nose, palate, finish, mouthfeel, and overall enjoyment.
 5. Compare member enjoyment scores and descriptor averages. View or edit individual records in the tasting journal; filter the journal by member.
 
-Descriptor intensity is 0–5, with blank meaning not assessed. Enjoyment is a separate 1–10 score. Averages include assessed values only and show sample counts. Each member has one editable tasting per event pour; create another event to repeat a flight. Events support open-label and blind tastings. Member choice is not authenticated and there are no host-only permissions.
+Descriptor intensity is 0–5, with blank meaning not assessed. Enjoyment is a separate 1–10 score. Averages include assessed values only and show sample counts. Each member has one editable tasting per event pour; create another event to repeat a flight. Events support open-label and blind tastings. Members sign in individually; only the event host or an administrator can manage the flight and reveal samples.
 
 ### Blind tasting events
 
@@ -32,7 +46,7 @@ Choose **Blind tasting — reveal at the end** when creating an event. Add anony
 
 After tasting, choose **Enter bourbon & reveal** on each sample. Select the actual whiskey from the catalog/cabinet or enter its details manually, then confirm **Reveal bourbon**. The sample's actual identity becomes visible in the flight and tasting journal. Existing scores, flavor measurements, dates, and notes stay intact; the original sample name remains alongside the revealed identity. Each pour is revealed separately. This is a one-way step; identities cannot be hidden again or changed through the reveal action. Existing open-label events are unchanged.
 
-This is a shared, trust-based reveal workflow: anyone with app access can trigger reveal, and tastings remain editable afterward. It does not enforce host roles, a minimum number of tasters, locked scores, or an automatic end time. Before reveal, the actual identity is not stored or returned by the app, so state responses/JSON exports contain only anonymous samples. Avoid writing identifying information in shared event titles or tasting notes. Scores and notes remain visible to other members during blind tasting.
+Only the host or an administrator can reveal samples. Members can edit their own tastings afterward. There is no minimum number of tasters, locked scores, or automatic end time. Before reveal, the actual identity is not stored or returned by the app, so state responses/JSON exports contain only anonymous samples. Avoid writing identifying information in shared event titles or tasting notes. Scores and notes remain visible to other members during blind tasting.
 
 Tasting does not change the bottle's remaining amount. Pour identities are snapshots: editing or removing an inventory bottle does not rewrite tasting history. Removing an event/pour preserves its tasting records as archived journal entries. Removing a member permanently removes that member's inventory and tastings, after confirmation. **Export society data** downloads a JSON export of members, bottles, events, pours, and tastings; importing/restoring that JSON is not implemented.
 
@@ -135,7 +149,7 @@ Original source: `https://barreldex.com/data/bottles.json`. Source dates and per
 
 ## Before a public launch
 
-Local use remains open by default. Hosted deployments use a shared HTTP Basic password over Render HTTPS. This protects access to the app, but does not provide individual accounts or roles: everyone with the password can read and modify all cabinets.
+Individual member accounts protect society data and enforce ownership and host roles. Hosted deployments use the shared HTTP Basic gate over Render HTTPS only until the first administrator account is created. After setup, member sign-in is the only login, including after logout. Complete administrator setup before sharing member invitations.
 
 ### Render testing and production
 
@@ -143,6 +157,6 @@ Local use remains open by default. Hosted deployments use a shared HTTP Basic pa
 
 Testing deploys the `staging` branch; production deploys `main`. Both run `npm ci && npm test` before starting, use Node 24.19.0, listen on `0.0.0.0`, and store SQLite at `/var/data/society.sqlite`. `/health` checks database readiness without exposing app data. SIGTERM and SIGINT drain HTTP requests before closing the database.
 
-Render generates a separate `ACCESS_PASSWORD` for each service. Retrieve it privately in that service's Environment settings and use the browser sign-in username `society`. Do not commit or share these values in chat. `REQUIRE_AUTH=true` prevents startup if the password is missing. Password changes require a redeploy. This shared gate is an initial access control, not society membership or administrator authorization.
+Render generates a separate `ACCESS_PASSWORD` for each service. Retrieve it privately in that service's Environment settings and use the browser sign-in username `society`. Do not commit or share these values in chat. `REQUIRE_AUTH=true` prevents startup if the password is missing. Password changes require a redeploy. This shared gate protects first-run setup only and is automatically bypassed once an account exists; individual member accounts then provide society membership and administrator authorization.
 
 Push changes to `staging`, check the testing site, then merge those same changes into `main` to release production. The databases remain independent and code promotion does not copy test records. Both databases start empty; existing local records are not automatically uploaded. Use SQLite-native backups for any migration or backup, including WAL state; filesystem snapshots alone are not application-consistent database backups. Catalog snapshots are bundled in Git; local catalog overrides are not transferred.
