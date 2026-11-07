@@ -1,0 +1,63 @@
+projects:
+  - name: Fifth Barrel Society
+    environments:
+      - name: testing
+        services:
+          - type: web
+            name: fifth-barrel-testing
+            runtime: node
+            repo: https://github.com/brketterl/FifthBarrell
+            branch: staging
+            region: oregon
+            plan: starter
+            buildCommand: npm ci && npm test
+            startCommand: npm start
+            autoDeployTrigger: commit
+            healthCheckPath: /health
+            disk:
+              name: fifth-barrel-testing-data
+              mountPath: /var/data
+              sizeGB: 1
+            envVars:
+              - key: NODE_VERSION
+                value: 24.19.0
+              - key: NODE_ENV
+                value: production
+              - key: HOST
+                value: 0.0.0.0
+              - key: DB_PATH
+                value: /var/data/society.sqlite
+              - key: REQUIRE_AUTH
+                value: "true"
+              - key: ACCESS_PASSWORD
+                generateValue: true
+      - name: production
+        services:
+          - type: web
+            name: fifth-barrel-production
+            runtime: node
+            repo: https://github.com/brketterl/FifthBarrell
+            branch: main
+            region: oregon
+            plan: starter
+            buildCommand: npm ci && npm test
+            startCommand: npm start
+            autoDeployTrigger: commit
+            healthCheckPath: /health
+            disk:
+              name: fifth-barrel-production-data
+              mountPath: /var/data
+              sizeGB: 1
+            envVars:
+              - key: NODE_VERSION
+                value: 24.19.0
+              - key: NODE_ENV
+                value: production
+              - key: HOST
+                value: 0.0.0.0
+              - key: DB_PATH
+                value: /var/data/society.sqlite
+              - key: REQUIRE_AUTH
+                value: "true"
+              - key: ACCESS_PASSWORD
+                generateValue: true

@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { setupAuth } from './auth.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
@@ -10,7 +11,10 @@ import { setupEvents } from './events.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const ratings = ['Favorite', 'Daily Drinker', 'Just OK', 'Do not Buy Again'];
-export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false} = {}) {
+export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false, accessPassword, requireAuth = false} = {}) {
+  if(requireAuth&&!accessPassword)throw new Error('ACCESS_PASSWORD is required when REQUIRE_AUTH=true.');
+  const digest=value=>createHash('sha256').update(value).digest();
+  const expectedAuth=accessPassword?digest(`society:${accessPassword}`):null;
   if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
@@ -58,6 +62,12 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   const handler = async (req,res) => {
     const url = new URL(req.url,'http://localhost');
     try {
+      if(url.pathname==='/health'&&['GET','HEAD'].includes(req.method)){db.prepare('SELECT 1').get();return send(res,200,{ok:true});}
+      if(expectedAuth){
+        const header=req.headers.authorization||'';
+        const supplied=/^Basic [A-Za-z0-9+/]+=*$/i.test(header)?Buffer.from(header.slice(6),'base64').toString('utf8'):'';
+        if(!timingSafeEqual(digest(supplied),expectedAuth)){res.writeHead(401,{'WWW-Authenticate':'Basic realm="Fifth Barrel Society", charset="UTF-8"','Cache-Control':'no-store'});return res.end('Sign in with the society username and shared password.');}
+      }
       if(await auth.handle(req,res,url,body,send))return;
       const user=auth.user(req);
       if(url.pathname.startsWith('/api/')&&!auth.enabled()&&!allowUnconfigured){
@@ -149,6 +159,9 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   return {handler,close:()=>db.close()};
 }
 if (process.argv[1] && fileURLToPath(import.meta.url)===process.argv[1]) {
-  const app=createApp(process.env.DB_PATH); const server=http.createServer(app.handler);
+  const app=createApp(process.env.DB_PATH, {accessPassword:process.env.ACCESS_PASSWORD, requireAuth:process.env.REQUIRE_AUTH === 'true'}); const server=http.createServer(app.handler);
   server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log(`Fifth Barrel Society listening on port ${server.address().port}`));
+  const shutdown = () => server.close(() => { app.close(); });
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
