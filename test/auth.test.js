@@ -103,3 +103,35 @@ test('profile edits stay with the signed-in member and safely update credentials
   assert.equal((await request('auth/login',{email:'final@example.com',password:'z'})).status,200);
  }finally{await new Promise(r=>server.close(r));app.close();}
 });
+
+test('only admins manage account roles and the last administrator is protected',async()=>{
+ const app=createApp(':memory:'),server=http.createServer(app.handler);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base=`http://127.0.0.1:${server.address().port}/api/`;
+ async function request(path,data,cookie='',origin){const res=await fetch(base+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json',cookie,...(origin?{origin}:{})},body:data?JSON.stringify(data):undefined});return {status:res.status,data:await res.json(),cookie:res.headers.get('set-cookie')?.split(';')[0]};}
+ try{
+  const admin=await request('auth/setup',{name:'Host',email:'host@example.com',password:'h'});
+  const member=(await request('members',{name:'Member'},admin.cookie)).data;
+  const invite=(await request('auth/invite',{member_id:member.id},admin.cookie)).data;
+  const joined=await request('auth/join',{token:invite.url.split('=')[1],email:'member@example.com',password:'m'});
+  const role={member_id:member.id,role:'admin'};
+  assert.equal((await request('auth/role',role)).status,403);
+  assert.equal((await request('auth/role',role,joined.cookie)).status,403);
+  assert.equal((await request('auth/role',{member_id:1,role:'member'},admin.cookie)).status,400);
+  assert.equal((await request('auth/role',role,admin.cookie,'https://foreign.example.com')).status,403);
+  assert.equal((await request('auth/role',{...role,role:'owner'},admin.cookie)).status,400);
+  const noAccount=(await request('members',{name:'Not joined'},admin.cookie)).data;
+  assert.equal((await request('auth/role',{...role,member_id:noAccount.id},admin.cookie)).status,400);
+  assert.equal((await request('auth/role',role,admin.cookie)).status,200);
+  assert.equal((await request('auth/session',null,joined.cookie)).data.user.role,'admin');
+  assert.equal((await request('members',{name:'Added by new admin'},joined.cookie)).status,201);
+  assert.equal((await request('state',null,admin.cookie)).data.members.find(m=>m.id===member.id).role,'admin');
+  assert.equal((await request('auth/role',{...role,role:'member'},admin.cookie)).status,200);
+  assert.equal((await request('members',{name:'Blocked'},joined.cookie)).status,403);
+  assert.equal((await request('auth/session',null,joined.cookie)).data.user.role,'member');
+  assert.equal((await request('auth/role',role,admin.cookie)).status,200);
+  assert.equal((await request('auth/role',{member_id:1,role:'member'},admin.cookie)).status,200);
+  assert.equal((await request('auth/role',{...role,role:'member'},admin.cookie)).status,403);
+  assert.equal((await request('auth/role',{...role,role:'member'},joined.cookie)).status,400);
+  assert.equal((await request('auth/role',{member_id:1,role:'admin'},joined.cookie)).status,200);
+ }finally{await new Promise(r=>server.close(r));app.close();}
+});

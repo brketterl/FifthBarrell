@@ -22,5 +22,15 @@ test('member onboarding and gathering workflow',async({page})=>{
  await page.locator('#sign-out').click();await expect(page.locator('#auth-dialog')).toBeVisible();await page.locator('#auth-form [name=email]').fill('updated-host@example.com');await page.locator('#auth-form [name=password]').fill('sip');await page.locator('#auth-form [type=submit]').click();await expect(page.locator('#auth-dialog')).not.toBeVisible();
  // Restore shared test account credentials for the next viewport run.
  await page.locator('#my-profile').click();await page.locator('#profile-form [name=name]').fill('Society Host');await page.locator('#profile-form [name=email]').fill('host@example.com');await page.locator('#profile-form [name=current_password]').fill('sip');await page.locator('#profile-form [name=new_password]').fill('pour');await page.locator('#profile-form [name=confirm_password]').fill('pour');await page.locator('#profile-form [type=submit]').click();await expect(page.locator('#profile-dialog')).not.toBeVisible();
+ const memberName='Role test '+test.info().project.name;
+ const added=await page.request.post('/api/members',{data:{name:memberName}});const roleMember=await added.json();
+ const inviteResponse=await page.request.post('/api/auth/invite',{data:{member_id:roleMember.id}});const invitation=await inviteResponse.json();
+ const joined=await page.request.post('/api/auth/join',{data:{token:invitation.url.split('=')[1],email:`role-${test.info().project.name}@example.com`,password:'r'}});expect(joined.status()).toBe(201);
+ // Restore admin session after using the invitation endpoint in the shared request context.
+ await page.request.post('/api/auth/login',{data:{email:'host@example.com',password:'pour'}});await page.reload();await page.locator('#members-nav').click();
+ const roleCard=page.locator('.member-card').filter({has:page.getByRole('heading',{name:memberName,exact:true})});
+ await expect(roleCard.locator('.member-role')).toHaveText('Member');
+ page.once('dialog',d=>d.accept());await roleCard.getByRole('button',{name:'Make administrator',exact:true}).click();await expect(roleCard.locator('.member-role')).toHaveText('Administrator');
+ page.once('dialog',d=>d.accept());await roleCard.getByRole('button',{name:'Make member',exact:true}).click();await expect(roleCard.locator('.member-role')).toHaveText('Member');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();expect(errors).toEqual([]);await page.screenshot({path:`/tmp/fifth-barrel-${test.info().project.name}.png`,fullPage:true});
 });

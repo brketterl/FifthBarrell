@@ -28,6 +28,19 @@ export function setupAuth(db,security){
     const input=await body(req),action=url.pathname.split('/').pop();
     if(action==='logout'){const token=(req.headers.cookie||'').match(/fb_session=([^;]+)/)?.[1];if(token)db.prepare('DELETE FROM sessions WHERE token=?').run(digest(token));res.setHeader('Set-Cookie','fb_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');send(res,200,{ok:true});return true;}
     if(action==='invite'){if(user(req)?.role!=='admin'){send(res,403,{error:'Only administrators can invite members.'});return true;}const id=Number(input.member_id);if(!db.prepare('SELECT id FROM members WHERE id=?').get(id)||db.prepare('SELECT id FROM accounts WHERE member_id=?').get(id))throw Error('Choose a member without an account.');const token=randomBytes(32).toString('hex');db.prepare('INSERT OR REPLACE INTO invitations VALUES (?,?)').run(digest(token),id);send(res,201,{url:'/#invite='+token});return true;}
+    if(action==='role'){
+      if(user(req)?.role!=='admin'){send(res,403,{error:'Only administrators can change member roles.'});return true;}
+      if(!Number.isSafeInteger(input.member_id)||input.member_id<1||!['admin','member'].includes(input.role))throw Error('Choose a valid member and role.');
+      db.exec('BEGIN IMMEDIATE');
+      try{
+        const target=db.prepare('SELECT id,role FROM accounts WHERE member_id=?').get(input.member_id);
+        if(!target)throw Error('This member must create their account before you can change their role.');
+        if(target.role==='admin'&&input.role==='member'&&db.prepare("SELECT count(*) AS count FROM accounts WHERE role='admin'").get().count<=1)throw Error('The society must keep at least one administrator.');
+        db.prepare('UPDATE accounts SET role=? WHERE id=?').run(input.role,target.id);
+        db.exec('COMMIT');
+      }catch(e){db.exec('ROLLBACK');throw e;}
+      send(res,200,{member_id:input.member_id,role:input.role});return true;
+    }
     if(action==='profile'){
       const account=user(req);
       if(!account){send(res,401,{error:'Please sign in to edit your profile.'});return true;}

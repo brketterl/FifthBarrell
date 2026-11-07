@@ -94,7 +94,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
           }
         }
       }
-      if (url.pathname==='/api/state' && req.method==='GET') return send(res,200,{members:db.prepare('SELECT * FROM members ORDER BY name COLLATE NOCASE').all(),bottles:db.prepare('SELECT * FROM bottles ORDER BY created_at DESC,id DESC').all().map(withLabel),tastings:tastings.all(),tastingStages,events:events.all(),pours:events.pours().map(withLabel)});
+      if (url.pathname==='/api/state' && req.method==='GET') return send(res,200,{members:db.prepare('SELECT m.*,a.role FROM members m LEFT JOIN accounts a ON a.member_id=m.id ORDER BY m.name COLLATE NOCASE').all(),bottles:db.prepare('SELECT * FROM bottles ORDER BY created_at DESC,id DESC').all().map(withLabel),tastings:tastings.all(),tastingStages,events:events.all(),pours:events.pours().map(withLabel)});
       if (url.pathname==='/api/events' && req.method==='POST') {const saved=events.create(await body(req));if(user)db.prepare('UPDATE events SET host_member_id=? WHERE id=?').run(user.member_id,saved.id);return send(res,201,saved);}
       const eventMatch=url.pathname.match(/^\/api\/events\/(\d+)$/);
       const eventPours=url.pathname.match(/^\/api\/events\/(\d+)\/pours$/);

@@ -37,10 +37,10 @@ function render() {
   $('#empty-add').hidden=state.bottles.length>0;
   $('#members').innerHTML=state.members.length?state.members.map(m=>{
     const bottles=state.bottles.filter(b=>b.member_id===m.id);
-    return `<article class="member-card"><span class="avatar">${escape(initials(m.name))}</span><h3>${escape(m.name)}</h3><p>${bottles.length} bottles · ${money(bottles.reduce((s,b)=>s+(b.price??0),0))}<br>${bottles.filter(b=>b.rating==='Favorite').length} favorites</p><div class="member-actions"><button class="secondary" data-cabinet="${m.id}">View cabinet</button><button class="danger" data-remove-member="${m.id}">Remove member</button></div></article>`;
+    return `<article class="member-card"><span class="avatar">${escape(initials(m.name))}</span><h3>${escape(m.name)}</h3><p class="member-role">${m.role==='admin'?'Administrator':m.role==='member'?'Member':'Account not yet created'}</p><p>${bottles.length} bottles · ${money(bottles.reduce((s,b)=>s+(b.price??0),0))}<br>${bottles.filter(b=>b.rating==='Favorite').length} favorites</p><div class="member-actions"><button class="secondary" data-cabinet="${m.id}">View cabinet</button><button class="danger" data-remove-member="${m.id}">Remove member</button></div></article>`;
   }).join(''):'<div class="empty"><h2>There’s a seat at the table.</h2><p>Add your first society member to start collecting.</p></div>';
 }
-async function refresh() { state=await api('state'); render(); renderEvents(); renderHome(); applyPermissions(); }
+async function refresh() { if(currentUser)currentUser=(await api('auth/session')).user;state=await api('state'); render(); renderEvents(); renderHome(); applyPermissions(); }
 function view(members) { $('#home-view').hidden=true;$('#home-nav').classList.remove('active'); $('#events-view').hidden=true; $('#events-nav').classList.remove('active'); $('#cabinet-view').hidden=members; $('#members-view').hidden=!members; $('#members-nav').classList.toggle('active',members); $('#cabinet-nav').classList.toggle('active',!members); }
 $('#cabinet-nav').onclick=()=>view(false); $('#members-nav').onclick=()=>view(true);
 for (const id of ['search','member-filter','rating-filter','sort']) $('#'+id).addEventListener(id==='search'?'input':'change',render);
@@ -254,8 +254,15 @@ function applyPermissions(){
   const admin=currentUser.role==='admin';
   $('#account-label').textContent=currentUser.name+' · '+(admin?'Society administrator':'Society member');$('#sign-out').hidden=false;$('#my-profile').hidden=false;$('#add-member').hidden=!admin;
   for(const select of [$('#bottle-form').elements.member_id,$('#tasting-form').elements.member_id]){if(!admin){select.innerHTML=`<option value="${currentUser.member_id}">${escape(currentUser.name)}</option>`;}}
-  document.querySelectorAll('[data-remove-member]').forEach(b=>b.hidden=!admin);
-  if(admin)document.querySelectorAll('[data-cabinet]').forEach(b=>{if(!b.parentElement.querySelector('[data-invite]'))b.insertAdjacentHTML('afterend',`<button class="secondary" data-invite="${b.dataset.cabinet}">Create sign-in invite</button>`);});
+  document.querySelectorAll('[data-remove-member]').forEach(b=>b.hidden=!admin||state.members.find(m=>m.id===Number(b.dataset.removeMember))?.role==='admin');
+  if(admin)document.querySelectorAll('[data-cabinet]').forEach(b=>{
+    const member=state.members.find(m=>m.id===Number(b.dataset.cabinet));
+    if(!member?.role){if(!b.parentElement.querySelector('[data-invite]'))b.insertAdjacentHTML('afterend',`<button class="secondary" data-invite="${b.dataset.cabinet}">Create sign-in invite</button>`);}
+    else if(!b.parentElement.querySelector('[data-role-member]')){
+      const lastAdmin=member.role==='admin'&&state.members.filter(m=>m.role==='admin').length===1;
+      b.insertAdjacentHTML('afterend',`<button class="secondary" data-role-member="${member.id}" data-role="${member.role==='admin'?'member':'admin'}" ${lastAdmin?'disabled title="The society must keep at least one administrator."':''}>${member.role==='admin'?'Make member':'Make administrator'}</button>`);
+    }
+  });
   const selected=state.events.find(e=>String(e.id)===selectedEventId),host=admin||selected?.host_member_id===currentUser.member_id;
   for(const selector of ['#add-pour','#remove-event','[data-remove-pour]','[data-reveal-pour]'])document.querySelectorAll(selector).forEach(b=>b.hidden=!host);
   for(const selector of ['[data-edit-tasting]','[data-remove-tasting]'])document.querySelectorAll(selector).forEach(b=>{const id=Number(b.dataset.editTasting||b.dataset.removeTasting);b.hidden=!admin&&state.tastings.find(t=>t.id===id)?.member_id!==currentUser.member_id;});
@@ -292,3 +299,12 @@ $('#profile-form').onsubmit=async e=>{
   catch(e){error.textContent=e.message;}finally{button.disabled=false;}
 };
 $('#profile-dialog').addEventListener('close',()=>$('#profile-form').reset());
+
+$('#members').addEventListener('click',async e=>{
+  const button=e.target.closest('[data-role-member]');if(!button)return;
+  const member=state.members.find(m=>m.id===Number(button.dataset.roleMember)),role=button.dataset.role;
+  if(!confirm(role==='admin'?`Make ${member.name} an administrator? They will be able to manage society members, all cabinets, tasting events, and member roles.`:`Make ${member.name} a regular member? They will keep their own cabinet, notes, and ability to host tastings.`))return;
+  button.disabled=true;
+  try{await api('auth/role','POST',{member_id:member.id,role});await refresh();toast(role==='admin'?'Administrator access granted.':'Member role updated.');}
+  catch(e){toast(e.message);button.disabled=false;}
+});
