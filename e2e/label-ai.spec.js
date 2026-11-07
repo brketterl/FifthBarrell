@@ -34,6 +34,6 @@ test('missing AI configuration gives useful setup feedback without a dead contro
   await page.goto(base);await page.request.post(base+'/api/auth/setup',{data:{name:'Member',email:'member@example.com',password:'m'}});await page.reload();await page.locator('#home-bottle').click();await page.locator('#open-scan').click();
   await expect(page.locator('#ai-label-availability')).toContainText('server cannot find an OpenAI API key');await expect(page.getByRole('button',{name:'Read label with OpenAI',exact:true})).toBeEnabled();
   const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Read label with OpenAI',exact:true}).click();const image=await sharp({create:{width:40,height:60,channels:3,background:'#fff'}}).png().toBuffer();await (await chooser).setFiles({name:'label.png',mimeType:'image/png',buffer:image});
-  await expect(page.locator('#ai-label-status')).toContainText('Environment variable or Secret File');await expect(page.locator('#bottle-form [name=name]')).toHaveValue('');await page.getByRole('button',{name:'Check AI setup'}).click();await expect(page.locator('#ai-label-availability')).toContainText('OPENAI_API_KEY');
+  await expect(page.locator('#ai-label-status')).toContainText('Environment variable or Secret File');await expect(page.locator('#bottle-form [name=name]')).toHaveValue('');await page.locator('#close-scan').click();await page.locator('#open-scan').click();await expect(page.locator('#ai-label-availability')).toContainText('OPENAI_API_KEY');
  }finally{await new Promise(r=>server.close(r));app.close();}
 });
