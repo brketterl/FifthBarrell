@@ -30,16 +30,15 @@ npm start
 
 This server app is separate from the single-file browser prototype previously supplied in chat. Browser-only cabinet data is not automatically imported into SQLite.
 
-## Scan a bottle (testing trial)
+## Label photo lookup (testing trial)
 
-Open **Add a bottle → Scan a bottle**. Use the rear camera, photograph a barcode, enter the printed digits, or photograph the label. Suggestions require an explicit selection, followed by reviewing the normal bottle form and saving. A failed scan or lookup always leaves catalog search and manual entry available.
+Open **Add a bottle → Look up a label photo → Photograph label**. Take or select a clear label photo. Review and edit the recognized text, choose a possible catalog match, or correct the proposed name and use the label details as a starting point. Verify the expression, proof, and batch before saving the bottle. Catalog search and manual entry remain available.
 
-- Barcode images and camera frames are decoded locally with ZXing. UPC-A, EAN-8, EAN-13, and GTIN-14 digits are validated and normalized to 14 digits, preserving leading zeros. QR links are not followed. The signed-in server sends only the code to [UPCitemdb’s free lookup endpoint](https://www.upcitemdb.com/wp/docs/main/development/plan/). It does not download provider images or copy retail prices. Brand names are not treated as distillery identities. Missing proof and batch data stay blank for verification.
-- A barcode saved on a society bottle can identify it for later scans without another provider request. Names suggested from existing bottles still require checking against the new bottle. The free API has shared limits; this app allows at most 90 external requests per UTC day, spaces them at least 11 seconds apart, and permits one at a time. Usage persists in SQLite. Limits and outages show a fallback message.
-- Label photos are read on the device using self-hosted Tesseract.js and an English language model. No label image is uploaded. The first scan downloads the OCR assets; recognition can be slower on phones. Clear, straight-on photos work best. The recognized text is editable and searches the existing offline catalog for possible matches. Alternatively, correct the proposed name and use label details; an explicitly printed “proof” value may be extracted for review. Stylized labels, glare, fine print, and release details can be misread.
-- Scanning libraries and OCR assets are served from pinned npm dependencies under a fixed asset whitelist. Camera access requires HTTPS (or localhost) and permission. Camera tracks stop on scan success, scanner/dialog closure, or hiding the page. Photos above 15 MB are rejected; label photos are resized locally before OCR.
+Photos are read on the device using self-hosted Tesseract.js and an English language model. No image is uploaded; only recognized text is sent to search the offline catalog. The first lookup downloads the OCR assets and may take longer on phones. Clear, straight-on photos work best. Photos over 15 MB are rejected, and accepted photos are resized locally before OCR. Stylized text, glare, and fine print can still be misread. A clearly printed “proof” value may be extracted for review when using label details directly.
 
-Live provider lookup from this Codex workspace was blocked by its outbound network policy. Automated tests exercise the actual barcode decoder and OCR engine with generated images, provider responses with controlled fixtures, permissions, quota/failure handling, and review-before-save. Live database coverage and physical-phone camera behavior should be assessed on the testing site before production approval. No paid API account is required.
+Barcode scanning and external barcode lookup are removed from this trial. Existing saved barcode data is retained and is not changed when bottles are edited. No external barcode provider, account, API key, or lookup allowance is involved in label photo lookup.
+
+Automated desktop/mobile checks exercise the actual OCR engine with generated images, catalog matching, review-before-fill, editable no-match fallback, and the bottle save workflow. Labels should also be tested on physical devices before production approval.
 
 ## Society tasting events
 
