@@ -19,7 +19,7 @@ test('accounts, invitations, sessions, and member/host permissions',async()=>{
  assert.equal((await request(`events/${event.id}/pours`,'POST',{whiskey_name:'Sample A'},taster.cookie)).status,403);
  const pour=(await request(`events/${event.id}/pours`,'POST',{whiskey_name:'Sample A'},admin.cookie)).data;
  assert.equal((await request(`pours/${pour.id}/reveal`,'PUT',{whiskey_name:'Secret'},taster.cookie)).status,403);
- assert.equal((await request('auth/login','POST',{email:'taster@example.com',password:'wrong password'})).status,401);
+ assert.equal((await request('auth/login','POST',{email:'taster@example.com',password:'wrong password'})).status,422);
  await request('auth/logout','POST',{},taster.cookie);assert.equal((await request('state','GET',null,taster.cookie)).status,401);
  }finally{await new Promise(r=>server.close(r));app.close();}
 });

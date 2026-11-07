@@ -145,7 +145,7 @@ Original source: `https://barreldex.com/data/bottles.json`. Source dates and per
 
 ## Before a public launch
 
-Individual member accounts protect society data and enforce ownership and host roles. Hosted deployments also retain the shared HTTP Basic gate over Render HTTPS to protect initial administrator setup. Complete administrator setup before sharing member invitations.
+Individual member accounts protect society data and enforce ownership and host roles. Hosted deployments use the shared HTTP Basic gate over Render HTTPS only until the first administrator account is created. After setup, member sign-in is the only login, including after logout. Complete administrator setup before sharing member invitations.
 
 ### Render testing and production
 
@@ -153,6 +153,6 @@ Individual member accounts protect society data and enforce ownership and host r
 
 Testing deploys the `staging` branch; production deploys `main`. Both run `npm ci && npm test` before starting, use Node 24.19.0, listen on `0.0.0.0`, and store SQLite at `/var/data/society.sqlite`. `/health` checks database readiness without exposing app data. SIGTERM and SIGINT drain HTTP requests before closing the database.
 
-Render generates a separate `ACCESS_PASSWORD` for each service. Retrieve it privately in that service's Environment settings and use the browser sign-in username `society`. Do not commit or share these values in chat. `REQUIRE_AUTH=true` prevents startup if the password is missing. Password changes require a redeploy. This shared gate is an additional access control; individual member accounts provide society membership and administrator authorization.
+Render generates a separate `ACCESS_PASSWORD` for each service. Retrieve it privately in that service's Environment settings and use the browser sign-in username `society`. Do not commit or share these values in chat. `REQUIRE_AUTH=true` prevents startup if the password is missing. Password changes require a redeploy. This shared gate protects first-run setup only and is automatically bypassed once an account exists; individual member accounts then provide society membership and administrator authorization.
 
 Push changes to `staging`, check the testing site, then merge those same changes into `main` to release production. The databases remain independent and code promotion does not copy test records. Both databases start empty; existing local records are not automatically uploaded. Use SQLite-native backups for any migration or backup, including WAL state; filesystem snapshots alone are not application-consistent database backups. Catalog snapshots are bundled in Git; local catalog overrides are not transferred.

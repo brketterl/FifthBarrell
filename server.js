@@ -65,7 +65,8 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
     const url = new URL(req.url,'http://localhost');
     try {
       if(url.pathname==='/health'&&['GET','HEAD'].includes(req.method)){db.prepare('SELECT 1').get();return send(res,200,{ok:true});}
-      if(expectedAuth){
+      // The shared gate protects first-run setup only. Member accounts take over afterward.
+      if(expectedAuth&&!auth.enabled()){
         const header=req.headers.authorization||'';
         const supplied=/^Basic [A-Za-z0-9+/]+=*$/i.test(header)?Buffer.from(header.slice(6),'base64').toString('utf8'):'';
         if(!timingSafeEqual(digest(supplied),expectedAuth)){res.writeHead(401,{'WWW-Authenticate':'Basic realm="Fifth Barrel Society", charset="UTF-8"','Cache-Control':'no-store'});return res.end('Sign in with the society username and shared password.');}

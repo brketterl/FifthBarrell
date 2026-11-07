@@ -22,7 +22,7 @@ export function setupAuth(db,security){
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254)throw Error('Enter a valid email address.');
     if(action==='login'){
       const key=req.socket.remoteAddress,entry=attempts.get(key);if(entry&&entry.until>Date.now()&&entry.count>=10){send(res,429,{error:'Too many attempts. Try again in 15 minutes.'});return true;}if(!entry||entry.until<Date.now())attempts.set(key,{count:0,until:Date.now()+900000});attempts.get(key).count++;
-      const a=db.prepare('SELECT * FROM accounts WHERE email=?').get(email);const [salt,hash]=(a?.password??'dummy:'+ '0'.repeat(128)).split(':');const candidate=scryptSync(String(input.password??'').slice(0,256),salt,64);if(!a||!timingSafeEqual(candidate,Buffer.from(hash,'hex'))){send(res,401,{error:'Email or password is incorrect.'});return true;}attempts.delete(key);login(req,res,a.id);send(res,200,{ok:true});return true;
+      const a=db.prepare('SELECT * FROM accounts WHERE email=?').get(email);const [salt,hash]=(a?.password??'dummy:'+ '0'.repeat(128)).split(':');const candidate=scryptSync(String(input.password??'').slice(0,256),salt,64);if(!a||!timingSafeEqual(candidate,Buffer.from(hash,'hex'))){send(res,422,{error:'Email or password is incorrect.'});return true;}attempts.delete(key);login(req,res,a.id);send(res,200,{ok:true});return true;
     }
     if(!['setup','join'].includes(action)){send(res,404,{error:'Not found.'});return true;}
     if(action==='setup'&&enabled()){send(res,403,{error:'Society already configured. Ask an administrator for an invitation.'});return true;}
