@@ -47,3 +47,18 @@ test('AI endpoints enforce sign-in and origin checks while capability status nev
   const state=await (await fetch(base+'state',{headers:{cookie}})).json();assert.deepEqual(state.bottles,[]);
  }finally{await new Promise(r=>server.close(r));app.close();}
 });
+
+test('printed tasting notes retain label evidence and suggested profiles retain their AI provenance',()=>{
+ let data=result();data.fields.bourbon_notes={value:'Vanilla, caramel, and oak.',evidence:'Vanilla, caramel, and oak.',source:'label'};
+ const printed=validateRecognition(data).fields.bourbon_notes;assert.equal(printed.source,'label');assert.match(printed.value,/^Label tasting notes:/);assert.equal(printed.evidence,'Vanilla, caramel, and oak.');
+ data=result();data.fields.name={value:'Wild Turkey 101',evidence:'WILD TURKEY 101'};data.fields.bourbon_notes={value:'Nose: caramel.\nPalate: oak and baking spice.\nFinish: warming.',evidence:'invented citation',source:'suggested'};
+ const suggested=validateRecognition(data).fields.bourbon_notes;assert.equal(suggested.source,'suggested');assert.equal(suggested.evidence,null);assert.match(suggested.value,/^AI-suggested tasting profile \(not verified for this bottle or batch\):/);
+});
+test('tasting notes require a valid source and suggestions require a label-backed bottle identity',()=>{
+ let data=result();data.fields.bourbon_notes={value:'Nose: vanilla.',evidence:null,source:'suggested'};assert.equal(validateRecognition(data).fields.bourbon_notes.value,null);
+ data.fields.name={value:'Unverified identity',evidence:null};assert.equal(validateRecognition(data).fields.bourbon_notes.value,null);
+ data=result();data.fields.bourbon_notes={value:'Vanilla',evidence:null,source:'label'};assert.equal(validateRecognition(data).fields.bourbon_notes.value,null);
+ data.fields.bourbon_notes={value:'Vanilla',evidence:'VANILLA',source:'producer verified'};assert.equal(validateRecognition(data).fields.bourbon_notes.value,null);
+ data.fields.bourbon_notes={value:'x'.repeat(2001),evidence:'x',source:'label'};assert.throws(()=>validateRecognition(data),/invalid bottle text/);
+ data=result();data.readable=false;data.fields.name={value:'Wild Turkey',evidence:'WILD TURKEY'};data.fields.bourbon_notes={value:'Nose: vanilla.',evidence:null,source:'suggested'};assert.equal(validateRecognition(data).fields.bourbon_notes.value,null);
+});
