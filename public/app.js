@@ -318,6 +318,7 @@ $('#members').addEventListener('click',async e=>{
 $('#bottle-form').addEventListener('scan-details',e=>{
   const data=e.detail,form=$('#bottle-form');
   bottleLookup.reset();
+  if(data.merge){for(const key of ['name','distillery','proof','age_years','size_ml','release','label','expression','year'])if(Object.hasOwn(data,key))form.elements[key].value=data[key]??'';form.elements.catalog_id.value='';toast('AI label details added. Review your bottle before saving.');return;}
   for(const key of ['catalog_id','name','distillery','proof','age_years','size_ml','release','label','expression'])form.elements[key].value=data[key]??'';
   form.elements.year.value='';
   toast('Suggested details added. Check the label, proof, and batch before saving.');

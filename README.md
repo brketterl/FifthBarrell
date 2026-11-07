@@ -40,6 +40,23 @@ Barcode scanning and external barcode lookup are removed from this trial. Existi
 
 Automated desktop/mobile checks exercise the actual OCR engine with generated images, catalog matching, review-before-fill, editable no-match fallback, and the bottle save workflow. Labels should also be tested on physical devices before production approval.
 
+## Optional OpenAI label recognition (testing trial)
+
+**Look up a label photo → Read label with OpenAI** accepts one or two photos of the same bottle (front/back). It proposes bottle name, distillery, label/edition, expression, proof, age, size, batch/release, and bottling/release year. Each supported value includes quoted label text for review. Members can edit values or uncheck fields, then select **Use selected details**. Only selected fields are merged into the bottle form; other bottle details, purchase price, notes, inventory, and cabinet photo remain intact. Saving the bottle is a separate step. AI can misread or invent details, so members must compare suggestions against the label.
+
+The existing **Read photo on device** option stays available without an API key. That option keeps images on the device. The OpenAI option explicitly sends resized label photos to OpenAI through the app server, with no member profile information or API key exposed to the browser. Label images and AI responses are not saved in the society database. The Responses API request sets `store: false`; OpenAI's applicable data handling policies still apply.
+
+To enable only on testing:
+
+1. Create an OpenAI project API key with access to the Responses API, and ensure that API billing or credits are available.
+2. In the Render **testing** service's Environment settings, add the secret `OPENAI_API_KEY`. Do not put the key in code, a browser field, or chat.
+3. Optionally set `OPENAI_LABEL_MODEL`; the default is `gpt-5.4-mini`, which supports image input and Structured Outputs. The model must support this request format and low reasoning effort.
+4. Save/redeploy the testing service, reopen label lookup, and try front/back label photos. Check OpenAI project usage as you test. Production remains disabled until its service is configured separately.
+
+The server decodes and resizes accepted image bytes, strips metadata, validates structured field types and numeric bounds, requires supporting evidence for each populated field, and limits requests to two images and 3,000 output tokens with a 45-second timeout. It does not use web tools or infer fields from memorized product knowledge in its extraction prompt; a bottler is not assumed to be the distillery. Duplicate in-flight requests by the same member are rejected. API errors, incomplete responses, or unreadable labels leave the form unchanged and offer the existing reader/manual entry. There are no automatic paid calls or retries.
+
+Automated tests use controlled OpenAI responses and cover strict schema requests, invalid images before paid calls, credentials/origin protection, missing evidence, number validation, refusal/timeout handling, duplicate requests, and the desktop/mobile review-and-merge workflow. Live model accuracy and account access still require testing with a privately configured API key; no paid model call was made during implementation.
+
 ## Cabinet photos (testing trial)
 
 In **Add a bottle** or **Edit bottle**, choose **Find a photo** to search Wikimedia Commons using the bottle name and release. You can edit the search terms if the exact release is not found. Results show candidates, their creators, and source links; choose **Use this photo** to preview one. Coverage varies, so **Upload a photo** also accepts your own bottle image. **Remove photo** returns to the bottle illustration. Changes apply only when you save the bottle; cancelling preserves the saved photo.

@@ -11,11 +11,13 @@ import { setupTastings, tastingStages } from './tasting.js';
 import { setupEvents } from './events.js';
 import {searchLabel} from './label-search.js';
 import {setupPhotos,readPhotoBytes} from './photos.js';
+import {setupLabelAI} from './label-ai.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const ratings = ['Favorite', 'Daily Drinker', 'Just OK', 'Do not Buy Again'];
-export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false, accessPassword, requireAuth = false, publicOrigin, photoFetch} = {}) {
+export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false, accessPassword, requireAuth = false, publicOrigin, photoFetch, openaiLabel} = {}) {
   const security=requestSecurity(publicOrigin);
+  const labelAI=setupLabelAI(openaiLabel);
   if(requireAuth&&!accessPassword)throw new Error('ACCESS_PASSWORD is required when REQUIRE_AUTH=true.');
   const digest=value=>createHash('sha256').update(value).digest();
   const expectedAuth=accessPassword?digest(`society:${accessPassword}`):null;
@@ -35,9 +37,9 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   const catalogById=new Map(catalog.map(b=>[b.id,b]));
   const withLabel=row=>({...row,...('photo_id' in row?{photo:photos.info(row.photo_id)}:{}),label:row.label??catalogById.get(row.catalog_id)?.label??'',expression:row.expression??catalogById.get(row.catalog_id)?.expression??''});
   const send = (res, status, body) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(body)); };
-  async function body(req) {
+  async function body(req,limit=65536) {
     if(req.savedBody)return req.savedBody;
-    let value=''; for await (const part of req) { value += part; if (value.length>65536) throw new Error('Request is too large.'); }
+    let value=''; for await (const part of req) { value += part; if (value.length>limit) throw new Error('Request is too large.'); }
     try { return JSON.parse(value); } catch { throw new Error('Please send valid JSON.'); }
   }
   function bottle(input,user,existingPhoto) {
@@ -102,6 +104,9 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
           }
         }
       }
+      if(url.pathname.startsWith('/api/label-recognition')&&!user)return send(res,401,{error:'Please sign in to read bottle labels.'});
+      if(url.pathname==='/api/label-recognition/status'&&req.method==='GET')return send(res,200,{available:labelAI.available()});
+      if(url.pathname==='/api/label-recognition'&&req.method==='POST')return send(res,200,await labelAI.recognize(await body(req,8*1024*1024),user.member_id));
       if(url.pathname.startsWith('/api/photos/')&&!user)return send(res,401,{error:'Please sign in to manage bottle photos.'});
       if(url.pathname==='/api/photos/search'&&req.method==='POST')return send(res,200,await photos.search((await body(req)).query));
       if(url.pathname==='/api/photos/upload'&&req.method==='POST')return send(res,201,await photos.upload(await readPhotoBytes(req),user.member_id));
@@ -168,7 +173,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
       }
       if (url.pathname.startsWith('/api/')) return send(res,404,{error:'Not found.'});
       if (!['GET','HEAD'].includes(req.method)) return send(res,405,{error:'Method not allowed.'});
-      const files={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css','/logo.svg':'logo.svg','/scan.js':'scan.js','/photos.js':'photos.js'};
+      const files={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css','/logo.svg':'logo.svg','/scan.js':'scan.js','/photos.js':'photos.js','/label-ai.js':'label-ai.js'};
       const vendor={
         '/vendor/tesseract.js':'tesseract.js/dist/tesseract.min.js',
         '/vendor/worker.min.js':'tesseract.js/dist/worker.min.js',
@@ -185,7 +190,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   return {handler,close:()=>db.close()};
 }
 if (process.argv[1] && fileURLToPath(import.meta.url)===process.argv[1]) {
-  const app=createApp(process.env.DB_PATH, {accessPassword:process.env.ACCESS_PASSWORD, requireAuth:process.env.REQUIRE_AUTH === 'true', publicOrigin:process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL}); const server=http.createServer(app.handler);
+  const app=createApp(process.env.DB_PATH, {accessPassword:process.env.ACCESS_PASSWORD, requireAuth:process.env.REQUIRE_AUTH === 'true', publicOrigin:process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL,openaiLabel:{apiKey:process.env.OPENAI_API_KEY,model:process.env.OPENAI_LABEL_MODEL||'gpt-5.4-mini'}}); const server=http.createServer(app.handler);
   server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log(`Fifth Barrel Society listening on port ${server.address().port}`));
   const shutdown = () => server.close(() => { app.close(); });
   process.once('SIGTERM', shutdown);
