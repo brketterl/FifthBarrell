@@ -51,3 +51,23 @@ test('HTTPS proxy origin supports setup, login, invitations and writes while rej
   assert.equal((await post('auth/logout',{},cookie)).status,200);
  }finally{await new Promise(r=>server.close(r));app.close();}
 });
+
+
+test('members choose password length; empty passwords are rejected and long passwords are not truncated',async()=>{
+ const app=createApp(':memory:'),server=http.createServer(app.handler);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base=`http://127.0.0.1:${server.address().port}/api/`;
+ async function post(path,data,cookie=''){const res=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',cookie},body:JSON.stringify(data)});return {status:res.status,data:await res.json(),cookie:res.headers.get('set-cookie')?.split(';')[0]};}
+ try{
+  const account={name:'Host',email:'host@example.com',password:'x'};
+  assert.equal((await post('auth/setup',{...account,password:''})).status,400);
+  const admin=await post('auth/setup',account);assert.equal(admin.status,201);
+  assert.equal((await post('auth/login',account)).status,200);
+  const member=await post('members',{name:'Member'},admin.cookie);
+  const invitation=await post('auth/invite',{member_id:member.data.id},admin.cookie);
+  const token=invitation.data.url.split('=')[1],password='a'.repeat(300)+'end';
+  assert.equal((await post('auth/join',{token,email:'member@example.com',password:''})).status,400);
+  assert.equal((await post('auth/join',{token,email:'member@example.com',password})).status,201);
+  assert.equal((await post('auth/login',{email:'member@example.com',password})).status,200);
+  assert.equal((await post('auth/login',{email:'member@example.com',password:'a'.repeat(300)+'wrong'})).status,422);
+ }finally{await new Promise(r=>server.close(r));app.close();}
+});

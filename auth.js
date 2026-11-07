@@ -8,7 +8,7 @@ export function setupAuth(db,security){
   const digest=t=>createHash('sha256').update(t).digest('hex');
   const user=req=>{const token=(req.headers.cookie||'').split(';').map(v=>v.trim()).find(v=>v.startsWith('fb_session='))?.slice(11);return token?db.prepare('SELECT a.id,a.member_id,a.email,a.role,m.name FROM sessions s JOIN accounts a ON a.id=s.account_id JOIN members m ON m.id=a.member_id WHERE s.token=? AND s.expires>?').get(digest(token),Date.now())??null:null;};
   const attempts=new Map();
-  const password=value=>{if(typeof value!=='string'||value.length<12||value.length>256)throw Error('Use a password between 12 and 256 characters.');const salt=randomBytes(16).toString('hex');return salt+':'+scryptSync(value,salt,64).toString('hex');};
+  const password=value=>{if(typeof value!=='string'||value.length===0)throw Error('Enter a password.');const salt=randomBytes(16).toString('hex');return salt+':'+scryptSync(value,salt,64).toString('hex');};
   const login=(req,res,id)=>{const token=randomBytes(32).toString('hex');db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now());db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(digest(token),id,Date.now()+604800000);res.setHeader('Set-Cookie',`fb_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${security.secureCookie(req)?'; Secure':''}`);};
   return {enabled,user,async handle(req,res,url,body,send){
     if(!url.pathname.startsWith('/api/auth/'))return false;
@@ -22,7 +22,7 @@ export function setupAuth(db,security){
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254)throw Error('Enter a valid email address.');
     if(action==='login'){
       const key=req.socket.remoteAddress,entry=attempts.get(key);if(entry&&entry.until>Date.now()&&entry.count>=10){send(res,429,{error:'Too many attempts. Try again in 15 minutes.'});return true;}if(!entry||entry.until<Date.now())attempts.set(key,{count:0,until:Date.now()+900000});attempts.get(key).count++;
-      const a=db.prepare('SELECT * FROM accounts WHERE email=?').get(email);const [salt,hash]=(a?.password??'dummy:'+ '0'.repeat(128)).split(':');const candidate=scryptSync(String(input.password??'').slice(0,256),salt,64);if(!a||!timingSafeEqual(candidate,Buffer.from(hash,'hex'))){send(res,422,{error:'Email or password is incorrect.'});return true;}attempts.delete(key);login(req,res,a.id);send(res,200,{ok:true});return true;
+      const a=db.prepare('SELECT * FROM accounts WHERE email=?').get(email);const [salt,hash]=(a?.password??'dummy:'+ '0'.repeat(128)).split(':');const candidate=scryptSync(String(input.password??''),salt,64);if(!a||!timingSafeEqual(candidate,Buffer.from(hash,'hex'))){send(res,422,{error:'Email or password is incorrect.'});return true;}attempts.delete(key);login(req,res,a.id);send(res,200,{ok:true});return true;
     }
     if(!['setup','join'].includes(action)){send(res,404,{error:'Not found.'});return true;}
     if(action==='setup'&&enabled()){send(res,403,{error:'Society already configured. Ask an administrator for an invitation.'});return true;}
