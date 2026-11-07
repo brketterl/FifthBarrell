@@ -2,6 +2,13 @@ import {test,expect} from '@playwright/test';
 import http from 'node:http';
 import sharp from 'sharp';
 import {createApp} from '../server.js';
+async function expectContainedPhoto(container){
+ const image=container.locator('.cabinet-photo');await expect(image).toBeVisible();
+ const frame=await container.boundingBox(),photo=await image.boundingBox();
+ expect(photo.x).toBeGreaterThanOrEqual(frame.x);expect(photo.y).toBeGreaterThanOrEqual(frame.y);
+ expect(photo.x+photo.width).toBeLessThanOrEqual(frame.x+frame.width+1);
+ expect(photo.y+photo.height).toBeLessThanOrEqual(frame.y+frame.height+1);
+}
 test('members preview, save, replace and remove cabinet photos',async({page})=>{
  const fixture=await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="420"><rect width="240" height="420" fill="#f4eee1"/><rect x="95" y="20" width="50" height="80" fill="#253c30"/><rect x="60" y="90" width="120" height="300" rx="20" fill="#9e6128"/><rect x="70" y="190" width="100" height="95" fill="#fff9e9"/></svg>')).png().toBuffer();
  const candidate={title:'File:Wild Turkey bottle.jpg',imageinfo:[{mime:'image/jpeg',thumburl:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Bottle.jpg/600px-Bottle.jpg',descriptionurl:'https://commons.wikimedia.org/wiki/File:Bottle.jpg',extmetadata:{Artist:{value:'Test Photographer'},LicenseShortName:{value:'CC BY-SA 4.0'},LicenseUrl:{value:'https://creativecommons.org/licenses/by-sa/4.0/'}}}]};
@@ -14,7 +21,10 @@ test('members preview, save, replace and remove cabinet photos',async({page})=>{
   expect((await (await page.request.get(base+'/api/state')).json()).bottles).toHaveLength(0);
   await page.locator('#bottle-form [type=submit]').click();await expect(page.locator('#bottle-dialog')).not.toBeVisible();await page.locator('#cabinet-nav').click();
   await expect(page.locator('.cabinet-photo')).toHaveCount(1);expect(await page.locator('.cabinet-photo').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
-  await page.locator('[data-bottle]').click();await expect(page.locator('#detail .cabinet-photo')).toBeVisible();await page.locator('#edit-bottle').click();
+  await expectContainedPhoto(page.locator('#bottles .bottle-art'));
+  const photoBox=await page.locator('#bottles .cabinet-photo').boundingBox(),bodyBox=await page.locator('#bottles .card-body').boundingBox();expect(photoBox.y+photoBox.height).toBeLessThanOrEqual(bodyBox.y);
+  await page.locator('#bottles').screenshot({path:`/tmp/fifth-barrel-cabinet-${test.info().project.name}.png`});
+  await page.locator('[data-bottle]').click();await expectContainedPhoto(page.locator('#detail .bottle-art'));await page.locator('#edit-bottle').click();
   await page.locator('#remove-photo').click();await page.locator('#bottle-form .close').last().click();
   await page.reload();await page.locator('#cabinet-nav').click();await expect(page.locator('.cabinet-photo')).toHaveCount(1);
   await page.locator('[data-bottle]').click();await page.locator('#edit-bottle').click();await page.locator('#find-photo').click();
