@@ -10,7 +10,7 @@ import { setupEvents } from './events.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const ratings = ['Favorite', 'Daily Drinker', 'Just OK', 'Do not Buy Again'];
-export function createApp(dbPath = join(root, 'data', 'society.sqlite'), { accessPassword = process.env.ACCESS_PASSWORD, requireAuth = process.env.REQUIRE_AUTH === 'true' } = {}) {
+export function createApp(dbPath = join(root, 'data', 'society.sqlite'), { accessPassword, requireAuth = false } = {}) {
   if (requireAuth && !accessPassword) throw new Error('ACCESS_PASSWORD is required when REQUIRE_AUTH=true.');
   const digest = value => createHash('sha256').update(value).digest();
   const expectedAuth = accessPassword ? digest(`society:${accessPassword}`) : null;
@@ -138,7 +138,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), { acces
   return {handler,close:()=>db.close()};
 }
 if (process.argv[1] && fileURLToPath(import.meta.url)===process.argv[1]) {
-  const app=createApp(process.env.DB_PATH); const server=http.createServer(app.handler);
+  const app=createApp(process.env.DB_PATH, {accessPassword:process.env.ACCESS_PASSWORD, requireAuth:process.env.REQUIRE_AUTH === 'true'}); const server=http.createServer(app.handler);
   server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log(`Fifth Barrel Society listening on port ${server.address().port}`));
   const shutdown = () => server.close(() => { app.close(); });
   process.once('SIGTERM', shutdown);
