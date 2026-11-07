@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { setupAuth } from './auth.js';
+import { requestSecurity } from './request-security.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -11,7 +12,8 @@ import { setupEvents } from './events.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const ratings = ['Favorite', 'Daily Drinker', 'Just OK', 'Do not Buy Again'];
-export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false, accessPassword, requireAuth = false} = {}) {
+export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false, accessPassword, requireAuth = false, publicOrigin} = {}) {
+  const security=requestSecurity(publicOrigin);
   if(requireAuth&&!accessPassword)throw new Error('ACCESS_PASSWORD is required when REQUIRE_AUTH=true.');
   const digest=value=>createHash('sha256').update(value).digest();
   const expectedAuth=accessPassword?digest(`society:${accessPassword}`):null;
@@ -26,7 +28,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   const events=setupEvents(db);
   const bottleColumns=new Set(db.prepare('PRAGMA table_info(bottles)').all().map(c=>c.name));
   for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
-  const auth=setupAuth(db);
+  const auth=setupAuth(db,security);
   const catalogById=new Map(catalog.map(b=>[b.id,b]));
   const withLabel=row=>({...row,label:row.label??catalogById.get(row.catalog_id)?.label??'',expression:row.expression??catalogById.get(row.catalog_id)?.expression??''});
   const send = (res, status, body) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(body)); };
@@ -77,7 +79,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
       if(url.pathname.startsWith('/api/') && auth.enabled()){
         if(!user)return send(res,401,{error:'Please sign in to your society account.'});
         if(!['GET','HEAD'].includes(req.method)){
-          if(req.headers.origin && req.headers.origin!==`http${req.socket.encrypted?'s':''}://${req.headers.host}`)return send(res,403,{error:'Invalid request origin.'});
+          if(!security.acceptsOrigin(req))return send(res,403,{error:'Invalid request origin.'});
           const admin=user.role==='admin';
           const owned=(table,id)=>db.prepare(`SELECT member_id FROM ${table} WHERE id=?`).get(Number(id))?.member_id===user.member_id;
           const host=id=>db.prepare('SELECT host_member_id FROM events WHERE id=?').get(Number(id))?.host_member_id===user.member_id;
@@ -159,7 +161,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   return {handler,close:()=>db.close()};
 }
 if (process.argv[1] && fileURLToPath(import.meta.url)===process.argv[1]) {
-  const app=createApp(process.env.DB_PATH, {accessPassword:process.env.ACCESS_PASSWORD, requireAuth:process.env.REQUIRE_AUTH === 'true'}); const server=http.createServer(app.handler);
+  const app=createApp(process.env.DB_PATH, {accessPassword:process.env.ACCESS_PASSWORD, requireAuth:process.env.REQUIRE_AUTH === 'true', publicOrigin:process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL}); const server=http.createServer(app.handler);
   server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log(`Fifth Barrel Society listening on port ${server.address().port}`));
   const shutdown = () => server.close(() => { app.close(); });
   process.once('SIGTERM', shutdown);

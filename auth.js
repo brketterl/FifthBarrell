@@ -1,5 +1,5 @@
 import {randomBytes, scryptSync, timingSafeEqual, createHash} from 'node:crypto';
-export function setupAuth(db){
+export function setupAuth(db,security){
   db.exec(`CREATE TABLE IF NOT EXISTS accounts(id INTEGER PRIMARY KEY,member_id INTEGER UNIQUE NOT NULL REFERENCES members(id) ON DELETE CASCADE,email TEXT UNIQUE NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS invitations(token TEXT PRIMARY KEY,member_id INTEGER UNIQUE REFERENCES members(id) ON DELETE CASCADE);`);
@@ -9,12 +9,12 @@ export function setupAuth(db){
   const user=req=>{const token=(req.headers.cookie||'').split(';').map(v=>v.trim()).find(v=>v.startsWith('fb_session='))?.slice(11);return token?db.prepare('SELECT a.id,a.member_id,a.email,a.role,m.name FROM sessions s JOIN accounts a ON a.id=s.account_id JOIN members m ON m.id=a.member_id WHERE s.token=? AND s.expires>?').get(digest(token),Date.now())??null:null;};
   const attempts=new Map();
   const password=value=>{if(typeof value!=='string'||value.length<12||value.length>256)throw Error('Use a password between 12 and 256 characters.');const salt=randomBytes(16).toString('hex');return salt+':'+scryptSync(value,salt,64).toString('hex');};
-  const login=(req,res,id)=>{const token=randomBytes(32).toString('hex');db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now());db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(digest(token),id,Date.now()+604800000);res.setHeader('Set-Cookie',`fb_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${req.socket.encrypted||process.env.COOKIE_SECURE==='true'?'; Secure':''}`);};
+  const login=(req,res,id)=>{const token=randomBytes(32).toString('hex');db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now());db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(digest(token),id,Date.now()+604800000);res.setHeader('Set-Cookie',`fb_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${security.secureCookie(req)?'; Secure':''}`);};
   return {enabled,user,async handle(req,res,url,body,send){
     if(!url.pathname.startsWith('/api/auth/'))return false;
     if(url.pathname==='/api/auth/session'&&req.method==='GET'){send(res,200,{setup:!enabled(),user:user(req)});return true;}
     if(req.method!=='POST'){send(res,405,{error:'Method not allowed.'});return true;}
-    if(req.headers.origin&&req.headers.origin!==`http${req.socket.encrypted?'s':''}://${req.headers.host}`){send(res,403,{error:'Invalid request origin.'});return true;}
+    if(!security.acceptsOrigin(req)){send(res,403,{error:'Invalid request origin.'});return true;}
     const input=await body(req),action=url.pathname.split('/').pop();
     if(action==='logout'){const token=(req.headers.cookie||'').match(/fb_session=([^;]+)/)?.[1];if(token)db.prepare('DELETE FROM sessions WHERE token=?').run(digest(token));res.setHeader('Set-Cookie','fb_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');send(res,200,{ok:true});return true;}
     if(action==='invite'){if(user(req)?.role!=='admin'){send(res,403,{error:'Only administrators can invite members.'});return true;}const id=Number(input.member_id);if(!db.prepare('SELECT id FROM members WHERE id=?').get(id)||db.prepare('SELECT id FROM accounts WHERE member_id=?').get(id))throw Error('Choose a member without an account.');const token=randomBytes(32).toString('hex');db.prepare('INSERT OR REPLACE INTO invitations VALUES (?,?)').run(digest(token),id);send(res,201,{url:'/#invite='+token});return true;}
