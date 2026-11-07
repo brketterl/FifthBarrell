@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { setupAuth } from './auth.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -9,7 +10,7 @@ import { setupEvents } from './events.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const ratings = ['Favorite', 'Daily Drinker', 'Just OK', 'Do not Buy Again'];
-export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
+export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false} = {}) {
   if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
@@ -21,10 +22,12 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
   const events=setupEvents(db);
   const bottleColumns=new Set(db.prepare('PRAGMA table_info(bottles)').all().map(c=>c.name));
   for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
+  const auth=setupAuth(db);
   const catalogById=new Map(catalog.map(b=>[b.id,b]));
   const withLabel=row=>({...row,label:row.label??catalogById.get(row.catalog_id)?.label??'',expression:row.expression??catalogById.get(row.catalog_id)?.expression??''});
   const send = (res, status, body) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(body)); };
   async function body(req) {
+    if(req.savedBody)return req.savedBody;
     let value=''; for await (const part of req) { value += part; if (value.length>65536) throw new Error('Request is too large.'); }
     try { return JSON.parse(value); } catch { throw new Error('Please send valid JSON.'); }
   }
@@ -55,8 +58,31 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
   const handler = async (req,res) => {
     const url = new URL(req.url,'http://localhost');
     try {
+      if(await auth.handle(req,res,url,body,send))return;
+      const user=auth.user(req);
+      if(url.pathname.startsWith('/api/')&&!auth.enabled()&&!allowUnconfigured){
+        if(url.pathname==='/api/state'&&req.method==='GET')return send(res,200,{members:db.prepare('SELECT id,name FROM members ORDER BY name').all()});
+        return send(res,403,{error:'Create the society administrator account first.'});
+      }
+      if(url.pathname.startsWith('/api/') && auth.enabled()){
+        if(!user)return send(res,401,{error:'Please sign in to your society account.'});
+        if(!['GET','HEAD'].includes(req.method)){
+          if(req.headers.origin && req.headers.origin!==`http${req.socket.encrypted?'s':''}://${req.headers.host}`)return send(res,403,{error:'Invalid request origin.'});
+          const admin=user.role==='admin';
+          const owned=(table,id)=>db.prepare(`SELECT member_id FROM ${table} WHERE id=?`).get(Number(id))?.member_id===user.member_id;
+          const host=id=>db.prepare('SELECT host_member_id FROM events WHERE id=?').get(Number(id))?.host_member_id===user.member_id;
+          const parts=url.pathname.split('/');
+          if(parts[2]==='members'&&!admin)return send(res,403,{error:'Only administrators can manage members.'});
+          if(parts[2]==='events'&&parts[3]&&!admin&&!host(parts[3]))return send(res,403,{error:'Only the host can manage this tasting.'});
+          if(parts[2]==='pours'&&!admin&&!host(db.prepare('SELECT event_id FROM pours WHERE id=?').get(Number(parts[3]))?.event_id))return send(res,403,{error:'Only the host can manage or reveal this pour.'});
+          if(['bottles','tastings'].includes(parts[2])){
+            if(parts[3]&&!admin&&!owned(parts[2],parts[3]))return send(res,403,{error:'You can only change your own bottles and tasting notes.'});
+            if(['POST','PUT'].includes(req.method)){const input=await body(req);if(!admin&&Number(input.member_id)!==user.member_id)return send(res,403,{error:'Choose your own member profile.'});req.savedBody=input;}
+          }
+        }
+      }
       if (url.pathname==='/api/state' && req.method==='GET') return send(res,200,{members:db.prepare('SELECT * FROM members ORDER BY name COLLATE NOCASE').all(),bottles:db.prepare('SELECT * FROM bottles ORDER BY created_at DESC,id DESC').all().map(withLabel),tastings:tastings.all(),tastingStages,events:events.all(),pours:events.pours().map(withLabel)});
-      if (url.pathname==='/api/events' && req.method==='POST') return send(res,201,events.create(await body(req)));
+      if (url.pathname==='/api/events' && req.method==='POST') {const saved=events.create(await body(req));if(user)db.prepare('UPDATE events SET host_member_id=? WHERE id=?').run(user.member_id,saved.id);return send(res,201,saved);}
       const eventMatch=url.pathname.match(/^\/api\/events\/(\d+)$/);
       const eventPours=url.pathname.match(/^\/api\/events\/(\d+)\/pours$/);
       if (eventPours && req.method==='POST') {
@@ -93,6 +119,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
       }
       const member=url.pathname.match(/^\/api\/members\/(\d+)$/);
       if (member && req.method==='DELETE') {
+        if(db.prepare("SELECT id FROM accounts WHERE member_id=? AND role='admin'").get(Number(member[1])))return send(res,403,{error:'Administrator profiles cannot be removed.'});
         if (!db.prepare('DELETE FROM members WHERE id=?').run(Number(member[1])).changes) return send(res,404,{error:'Member not found.'});
         return send(res,200,{ok:true});
       }
@@ -113,9 +140,9 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite')) {
       }
       if (url.pathname.startsWith('/api/')) return send(res,404,{error:'Not found.'});
       if (!['GET','HEAD'].includes(req.method)) return send(res,405,{error:'Method not allowed.'});
-      const files={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css'};
+      const files={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css','/logo.svg':'logo.svg'};
       const file=files[url.pathname]; if (!file) return send(res,404,{error:'Not found.'});
-      res.writeHead(200,{'Content-Type':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
+      res.writeHead(200,{'Content-Type':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
       res.end(req.method==='HEAD'?undefined:readFileSync(join(root,'public',file)));
     } catch(error) { send(res,400,{error:error.message}); }
   };

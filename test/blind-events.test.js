@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import {createApp} from '../server.js';
 test('blind events accept anonymous samples, reveal identities transactionally and preserve tasting scores',async()=>{
-  const app=createApp(':memory:'),server=http.createServer(app.handler);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+  const app=createApp(':memory:',{allowUnconfigured:true}),server=http.createServer(app.handler);await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const call=async(path,method='GET',data)=>{const res=await fetch(`http://127.0.0.1:${server.address().port}/api/${path}`,{method,headers:{'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});return{status:res.status,data:await res.json()};};
   try{
     const member=(await call('members','POST',{name:'Blind taster'})).data;
