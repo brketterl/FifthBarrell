@@ -8,6 +8,16 @@ export function setupAuth(db,security){
   const digest=t=>createHash('sha256').update(t).digest('hex');
   const user=req=>{const token=(req.headers.cookie||'').split(';').map(v=>v.trim()).find(v=>v.startsWith('fb_session='))?.slice(11);return token?db.prepare('SELECT a.id,a.member_id,a.email,a.role,m.name FROM sessions s JOIN accounts a ON a.id=s.account_id JOIN members m ON m.id=a.member_id WHERE s.token=? AND s.expires>?').get(digest(token),Date.now())??null:null;};
   const attempts=new Map();
+  const verifyPassword=(value,stored)=>{
+    const [salt,hash]=(stored??'dummy:'+ '0'.repeat(128)).split(':');
+    return typeof value==='string'&&timingSafeEqual(scryptSync(value,salt,64),Buffer.from(hash,'hex'));
+  };
+  const limited=(req,res,send)=>{
+    const key=req.socket.remoteAddress,entry=attempts.get(key);
+    if(entry&&entry.until>Date.now()&&entry.count>=10){send(res,429,{error:'Too many attempts. Try again in 15 minutes.'});return true;}
+    if(!entry||entry.until<Date.now())attempts.set(key,{count:0,until:Date.now()+900000});
+    attempts.get(key).count++;return false;
+  };
   const password=value=>{if(typeof value!=='string'||value.length===0)throw Error('Enter a password.');const salt=randomBytes(16).toString('hex');return salt+':'+scryptSync(value,salt,64).toString('hex');};
   const login=(req,res,id)=>{const token=randomBytes(32).toString('hex');db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now());db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(digest(token),id,Date.now()+604800000);res.setHeader('Set-Cookie',`fb_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${security.secureCookie(req)?'; Secure':''}`);};
   return {enabled,user,async handle(req,res,url,body,send){
@@ -18,11 +28,40 @@ export function setupAuth(db,security){
     const input=await body(req),action=url.pathname.split('/').pop();
     if(action==='logout'){const token=(req.headers.cookie||'').match(/fb_session=([^;]+)/)?.[1];if(token)db.prepare('DELETE FROM sessions WHERE token=?').run(digest(token));res.setHeader('Set-Cookie','fb_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');send(res,200,{ok:true});return true;}
     if(action==='invite'){if(user(req)?.role!=='admin'){send(res,403,{error:'Only administrators can invite members.'});return true;}const id=Number(input.member_id);if(!db.prepare('SELECT id FROM members WHERE id=?').get(id)||db.prepare('SELECT id FROM accounts WHERE member_id=?').get(id))throw Error('Choose a member without an account.');const token=randomBytes(32).toString('hex');db.prepare('INSERT OR REPLACE INTO invitations VALUES (?,?)').run(digest(token),id);send(res,201,{url:'/#invite='+token});return true;}
+    if(action==='profile'){
+      const account=user(req);
+      if(!account){send(res,401,{error:'Please sign in to edit your profile.'});return true;}
+      const name=typeof input.name==='string'?input.name.trim():'';
+      const email=typeof input.email==='string'?input.email.trim().toLowerCase():'';
+      if(!name||name.length>100)throw Error('Enter a name up to 100 characters.');
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254)throw Error('Enter a valid email address.');
+      if(input.new_password!=null&&typeof input.new_password!=='string')throw Error('Enter a valid new password.');
+      const changePassword=Boolean(input.new_password),changeCredentials=changePassword||email!==account.email;
+      if(changeCredentials){
+        if(limited(req,res,send))return true;
+        const stored=db.prepare('SELECT password FROM accounts WHERE id=?').get(account.id).password;
+        if(!verifyPassword(input.current_password,stored)){send(res,422,{error:'Your current password is incorrect.'});return true;}
+        attempts.delete(req.socket.remoteAddress);
+      }
+      const newHash=changePassword?password(input.new_password):null;
+      db.exec('BEGIN IMMEDIATE');
+      try{
+        db.prepare('UPDATE members SET name=? WHERE id=?').run(name,account.member_id);
+        if(newHash)db.prepare('UPDATE accounts SET email=?,password=? WHERE id=?').run(email,newHash,account.id);
+        else db.prepare('UPDATE accounts SET email=? WHERE id=?').run(email,account.id);
+        if(changeCredentials)db.prepare('DELETE FROM sessions WHERE account_id=?').run(account.id);
+        db.exec('COMMIT');
+      }catch(e){db.exec('ROLLBACK');if(e.message.includes('UNIQUE'))throw Error('That email is already used by another account.');throw e;}
+      if(changeCredentials)login(req,res,account.id);
+      send(res,200,{user:{...account,name,email}});return true;
+    }
     const email=typeof input.email==='string'?input.email.trim().toLowerCase():'';
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254)throw Error('Enter a valid email address.');
     if(action==='login'){
-      const key=req.socket.remoteAddress,entry=attempts.get(key);if(entry&&entry.until>Date.now()&&entry.count>=10){send(res,429,{error:'Too many attempts. Try again in 15 minutes.'});return true;}if(!entry||entry.until<Date.now())attempts.set(key,{count:0,until:Date.now()+900000});attempts.get(key).count++;
-      const a=db.prepare('SELECT * FROM accounts WHERE email=?').get(email);const [salt,hash]=(a?.password??'dummy:'+ '0'.repeat(128)).split(':');const candidate=scryptSync(String(input.password??''),salt,64);if(!a||!timingSafeEqual(candidate,Buffer.from(hash,'hex'))){send(res,422,{error:'Email or password is incorrect.'});return true;}attempts.delete(key);login(req,res,a.id);send(res,200,{ok:true});return true;
+      if(limited(req,res,send))return true;
+      const a=db.prepare('SELECT * FROM accounts WHERE email=?').get(email);
+      if(!verifyPassword(input.password,a?.password)||!a){send(res,422,{error:'Email or password is incorrect.'});return true;}
+      attempts.delete(req.socket.remoteAddress);login(req,res,a.id);send(res,200,{ok:true});return true;
     }
     if(!['setup','join'].includes(action)){send(res,404,{error:'Not found.'});return true;}
     if(action==='setup'&&enabled()){send(res,403,{error:'Society already configured. Ask an administrator for an invitation.'});return true;}

@@ -71,3 +71,35 @@ test('members choose password length; empty passwords are rejected and long pass
   assert.equal((await post('auth/login',{email:'member@example.com',password:'a'.repeat(300)+'wrong'})).status,422);
  }finally{await new Promise(r=>server.close(r));app.close();}
 });
+
+test('profile edits stay with the signed-in member and safely update credentials',async()=>{
+ const app=createApp(':memory:'),server=http.createServer(app.handler);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base=`http://127.0.0.1:${server.address().port}/api/`;
+ async function request(path,data,cookie='',origin){const res=await fetch(base+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json',cookie,...(origin?{origin}:{})},body:data?JSON.stringify(data):undefined});return {status:res.status,data:await res.json(),cookie:res.headers.get('set-cookie')?.split(';')[0]};}
+ try{
+  assert.equal((await request('auth/profile',{name:'Nobody',email:'nobody@example.com'})).status,401);
+  const admin=await request('auth/setup',{name:'Host',email:'host@example.com',password:'host'});
+  const member=await request('members',{name:'Member'},admin.cookie);
+  const invitation=await request('auth/invite',{member_id:member.data.id},admin.cookie);
+  const joined=await request('auth/join',{token:invitation.data.url.split('=')[1],email:'member@example.com',password:'m'});
+  const otherDevice=await request('auth/login',{email:'member@example.com',password:'m'});
+  const bottle=await request('bottles',{name:'Keepsake',member_id:member.data.id,rating:'Favorite',remaining:100},joined.cookie);assert.equal(bottle.status,201);
+  const own={name:'New Name',email:'member@example.com',member_id:1,id:1,role:'admin'};
+  assert.equal((await request('auth/profile',own,joined.cookie,'https://foreign.example.com')).status,403);
+  const renamed=await request('auth/profile',own,joined.cookie);assert.equal(renamed.status,200);assert.equal(renamed.data.user.role,'member');assert.equal(renamed.data.user.member_id,member.data.id);
+  let state=(await request('state',null,joined.cookie)).data;assert.equal(state.members.find(m=>m.id===1).name,'Host');assert.equal(state.members.find(m=>m.id===member.data.id).name,'New Name');assert.equal(state.bottles.find(b=>b.id===bottle.data.id).member_id,member.data.id);
+  const change={name:'Updated',email:'updated@example.com',new_password:'z'};
+  assert.equal((await request('auth/profile',change,joined.cookie)).status,422);
+  assert.equal((await request('auth/profile',{...change,current_password:'wrong'},joined.cookie)).status,422);
+  assert.equal((await request('auth/profile',{...change,email:'bad',current_password:'m'},joined.cookie)).status,400);
+  assert.equal((await request('auth/profile',{...change,email:'host@example.com',current_password:'m'},joined.cookie)).status,400);
+  const unchanged=(await request('auth/session',null,joined.cookie)).data.user;assert.equal(unchanged.name,'New Name');assert.equal(unchanged.email,'member@example.com');
+  const updated=await request('auth/profile',{...change,current_password:'m'},joined.cookie);assert.equal(updated.status,200);assert.equal(updated.data.user.email,'updated@example.com');assert.ok(updated.cookie);
+  assert.equal((await request('state',null,joined.cookie)).status,401);assert.equal((await request('state',null,otherDevice.cookie)).status,401);assert.equal((await request('state',null,updated.cookie)).status,200);
+  assert.equal((await request('auth/login',{email:'member@example.com',password:'m'})).status,422);
+  assert.equal((await request('auth/login',{email:'updated@example.com',password:'m'})).status,422);
+  assert.equal((await request('auth/login',{email:'updated@example.com',password:'z'})).status,200);
+  const emailOnly=await request('auth/profile',{name:'Updated',email:'final@example.com',current_password:'z',new_password:''},updated.cookie);assert.equal(emailOnly.status,200);
+  assert.equal((await request('auth/login',{email:'final@example.com',password:'z'})).status,200);
+ }finally{await new Promise(r=>server.close(r));app.close();}
+});

@@ -252,7 +252,7 @@ $('#home-events').onclick=e=>{const button=e.target.closest('[data-open-event]')
 function applyPermissions(){
   if(!currentUser)return;
   const admin=currentUser.role==='admin';
-  $('#account-label').textContent=currentUser.name+' · '+(admin?'Society administrator':'Society member');$('#sign-out').hidden=false;$('#add-member').hidden=!admin;
+  $('#account-label').textContent=currentUser.name+' · '+(admin?'Society administrator':'Society member');$('#sign-out').hidden=false;$('#my-profile').hidden=false;$('#add-member').hidden=!admin;
   for(const select of [$('#bottle-form').elements.member_id,$('#tasting-form').elements.member_id]){if(!admin){select.innerHTML=`<option value="${currentUser.member_id}">${escape(currentUser.name)}</option>`;}}
   document.querySelectorAll('[data-remove-member]').forEach(b=>b.hidden=!admin);
   if(admin)document.querySelectorAll('[data-cabinet]').forEach(b=>{if(!b.parentElement.querySelector('[data-invite]'))b.insertAdjacentHTML('afterend',`<button class="secondary" data-invite="${b.dataset.cabinet}">Create sign-in invite</button>`);});
@@ -276,3 +276,19 @@ const originalRenderEvents=renderEvents;renderEvents=function(){originalRenderEv
 const originalBottleDialog=bottleDialog;bottleDialog=function(b=null){originalBottleDialog(b);applyPermissions();};
 const originalTaste=taste;taste=function(pour,existing=null){const own=currentUser&&state.tastings.find(t=>t.event_pour_id===pour?.id&&t.member_id===currentUser.member_id);originalTaste(pour,existing||own);applyPermissions();};
 const originalDetail=detail;detail=function(id){originalDetail(id);if(currentUser&&currentUser.role!=='admin'&&state.bottles.find(b=>b.id===id)?.member_id!==currentUser.member_id){$('#delete-bottle').hidden=true;$('#edit-bottle').hidden=true;}};
+
+$('#my-profile').onclick=()=>{
+  if(!currentUser)return;
+  const form=$('#profile-form');form.reset();form.elements.name.value=currentUser.name;form.elements.email.value=currentUser.email;
+  $('#profile-error').textContent='';$('#profile-dialog').showModal();
+};
+$('#profile-form').onsubmit=async e=>{
+  e.preventDefault();const form=e.target,button=form.querySelector('[type=submit]'),error=$('#profile-error');error.textContent='';
+  const data=Object.fromEntries(new FormData(form));
+  if(data.new_password!==data.confirm_password){error.textContent='New passwords do not match.';return;}
+  if((data.new_password||data.email.trim().toLowerCase()!==currentUser.email)&&!data.current_password){error.textContent='Enter your current password to change your sign-in details.';return;}
+  delete data.confirm_password;button.disabled=true;
+  try{const result=await api('auth/profile','POST',data);currentUser=result.user;form.reset();await refresh();$('#profile-dialog').close();toast('Your profile has been updated.');}
+  catch(e){error.textContent=e.message;}finally{button.disabled=false;}
+};
+$('#profile-dialog').addEventListener('close',()=>$('#profile-form').reset());
