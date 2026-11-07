@@ -12,6 +12,7 @@ import { setupEvents } from './events.js';
 import {searchLabel} from './label-search.js';
 import {setupPhotos,readPhotoBytes} from './photos.js';
 import {setupLabelAI} from './label-ai.js';
+import {loadOpenAIConfig} from './openai-config.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const ratings = ['Favorite', 'Daily Drinker', 'Just OK', 'Do not Buy Again'];
@@ -190,7 +191,9 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   return {handler,close:()=>db.close()};
 }
 if (process.argv[1] && fileURLToPath(import.meta.url)===process.argv[1]) {
-  const app=createApp(process.env.DB_PATH, {accessPassword:process.env.ACCESS_PASSWORD, requireAuth:process.env.REQUIRE_AUTH === 'true', publicOrigin:process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL,openaiLabel:{apiKey:process.env.OPENAI_API_KEY,model:process.env.OPENAI_LABEL_MODEL||'gpt-5.4-mini'}}); const server=http.createServer(app.handler);
+  const openaiConfig=loadOpenAIConfig();
+  console.log('OpenAI label recognition configured: '+(openaiConfig.apiKey?'yes':'no'));
+  const app=createApp(process.env.DB_PATH, {accessPassword:process.env.ACCESS_PASSWORD, requireAuth:process.env.REQUIRE_AUTH === 'true', publicOrigin:process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL,openaiLabel:openaiConfig}); const server=http.createServer(app.handler);
   server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log(`Fifth Barrel Society listening on port ${server.address().port}`));
   const shutdown = () => server.close(() => { app.close(); });
   process.once('SIGTERM', shutdown);

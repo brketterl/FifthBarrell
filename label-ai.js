@@ -31,7 +31,7 @@ async function imageInput(value){
 export function setupLabelAI({apiKey,model='gpt-5.4-mini',fetcher=fetch}={}){
  const inFlight=new Set();
  return {available:()=>Boolean(apiKey),async recognize(input,memberId){
-  if(!apiKey)throw Error('AI label recognition is not enabled yet. Your administrator can add an OpenAI API key in Render. The photo reader is still available.');
+  if(!apiKey)throw Error('AI label recognition is not enabled yet. In the Render testing service, add OPENAI_API_KEY as an Environment variable or Secret File, then save/redeploy. The photo reader is still available.');
   if(!Array.isArray(input?.images)||input.images.length<1||input.images.length>2)throw Error('Choose one or two label photos from the same bottle.');
   if(inFlight.has(memberId))throw Error('Your label is already being read. Wait for it to finish before trying again.');
   inFlight.add(memberId);
