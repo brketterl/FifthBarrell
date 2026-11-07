@@ -14,15 +14,21 @@
   if(!result.readable){status('The label could not be read clearly. Try sharper front/back photos or use the on-device reader.');return;}
   for(const [key,spec] of Object.entries(fields)){
    const value=result.fields[key],has=value?.value!==null&&value?.value!==undefined;
-   const box=document.createElement('div');box.className='ai-label-field';const toggle=document.createElement('label');toggle.className='ai-label-toggle';const check=document.createElement('input');check.type='checkbox';check.checked=has&&value.source!=='suggested'&&(!spec.multiline||!form.elements.bourbon_notes.value.trim());check.setAttribute('aria-label','Use '+spec.label);toggle.append(check,document.createTextNode(spec.label));
+   const box=document.createElement('div');box.className='ai-label-field';const toggle=document.createElement('label');toggle.className='ai-label-toggle';const check=document.createElement('input');check.type='checkbox';check.checked=has&&value.source!=='suggested'&&(!spec.multiline||!form.elements.bourbon_notes.value.trim())&&(value.source!=='reference'||!form.elements[key].value.trim());check.setAttribute('aria-label','Use '+spec.label);toggle.append(check,document.createTextNode(spec.label));
    const input=document.createElement(spec.multiline?'textarea':'input');if(!spec.multiline)input.type=spec.type||'text';else{input.rows=6;box.classList.add('ai-label-notes');}input.value=has?String(value.value):'';input.placeholder=has?'':'Not visible on label';input.setAttribute('aria-label','AI '+spec.label);input.dataset.aiField=key;if(spec.type){input.min=spec.min;input.max=spec.max;input.step=spec.step;}else input.maxLength=spec.maxLength||250;
-   const evidence=document.createElement('small');evidence.textContent=has?(value.source==='suggested'?'AI-suggested profile, not verified for this bottle or batch. Select the checkbox to include it.':(spec.multiline?'Tasting notes printed on the label: ':'Read from label: ')+value.evidence):'No supported value was found.';input.addEventListener('input',()=>{check.checked=Boolean(input.value.trim());});box.append(toggle,input,evidence);$('#ai-label-fields').append(box);rows.push({key,spec,input,check});
+   const evidence=document.createElement('small');
+   if(!has)evidence.textContent='No useful value was found.';
+   else if(value.source==='reference'){
+    evidence.append(document.createTextNode('Reference source: '+value.evidence+' '));const link=document.createElement('a');link.href=value.source_url;link.textContent='View source';link.target='_blank';link.rel='noopener noreferrer';evidence.append(link,document.createTextNode(' · Check the expression and release against your bottle.'));
+   }else if(value.source==='suggested')evidence.textContent=(spec.multiline?'AI-suggested profile, not verified for this bottle or batch.':'AI product suggestion: '+(value.evidence||'Not independently verified.'))+' Select the checkbox to include it.';
+   else evidence.textContent=(spec.multiline?'Tasting notes printed on the label: ':'Read from label: ')+value.evidence;
+   input.addEventListener('input',()=>{check.checked=Boolean(input.value.trim());});box.append(toggle,input,evidence);$('#ai-label-fields').append(box);rows.push({key,spec,input,check});
   }
   $('#ai-label-review').hidden=false;status('Bottle details are ready to review. Nothing has changed in your bottle form yet.');
  }
  file.onchange=async()=>{
   const chosen=[...file.files];if(!chosen.length)return;reset();const v=version;if(chosen.length>2){status('Choose no more than two label photos from the same bottle.');return;}
-  status('Reading bottle details with OpenAI…');file.disabled=true;$('#read-label-ai').disabled=true;
+  status('Identifying bottle and checking product references with OpenAI…');file.disabled=true;$('#read-label-ai').disabled=true;
   try{const images=[];for(const image of chosen){images.push(await encode(image));if(!active(v))return;}
    request=new AbortController();const response=await fetch('/api/label-recognition',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({images}),signal:request.signal});const result=await response.json();if(!active(v))return;if(!response.ok)throw Error(result.error||'AI reading failed. Try the on-device reader.');review(result);
   }catch(e){if(active(v)&&e.name!=='AbortError')status(e.message||'Could not read this photo. Try a JPG or PNG.');}

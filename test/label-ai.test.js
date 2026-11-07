@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import sharp from 'sharp';
-import {setupLabelAI,labelFields,validateRecognition} from '../label-ai.js';
+import {setupLabelAI,labelFields,validateRecognition,collectReferenceSources,referenceURL} from '../label-ai.js';
 import {createApp} from '../server.js';
 const image=async()=> 'data:image/png;base64,'+(await sharp({create:{width:80,height:120,channels:3,background:'#fff'}}).png().toBuffer()).toString('base64');
 function result(){return {readable:true,fields:Object.fromEntries(Object.keys(labelFields).map(key=>[key,{value:null,evidence:null}])),warnings:[]};}
@@ -10,7 +10,7 @@ const response=value=>Response.json({status:'completed',output:[{type:'message',
 test('AI uses image input and strict structured output without storing responses or exposing the key',async()=>{
  const data=result();data.fields.name={value:'Wild Turkey 101',evidence:'WILD TURKEY 101'};data.fields.proof={value:101,evidence:'101 PROOF'};let calls=0;
  const ai=setupLabelAI({apiKey:'test-secret',fetcher:async(url,options)=>{
-  calls++;assert.equal(url,'https://api.openai.com/v1/responses');assert.equal(options.headers.Authorization,'Bearer test-secret');assert.equal(options.redirect,'error');const payload=JSON.parse(options.body);assert.equal(payload.store,false);assert.equal(payload.text.format.strict,true);assert.equal(payload.text.format.schema.additionalProperties,false);assert.equal(payload.model,'gpt-5.4-mini');assert.equal(payload.tools,undefined);assert.ok(payload.instructions.includes('untrusted data'));assert.ok(payload.instructions.includes('bottled-by'));assert.equal(payload.input[0].content.filter(c=>c.type==='input_image').length,2);assert.ok(payload.input[0].content[1].image_url.startsWith('data:image/jpeg;base64,'));return response(data);
+  calls++;assert.equal(url,'https://api.openai.com/v1/responses');assert.equal(options.headers.Authorization,'Bearer test-secret');assert.equal(options.redirect,'error');const payload=JSON.parse(options.body);assert.equal(payload.store,false);assert.equal(payload.text.format.strict,true);assert.equal(payload.text.format.schema.additionalProperties,false);assert.equal(payload.model,'gpt-5.4-mini');assert.deepEqual(payload.tools,[{type:'web_search',search_context_size:'low'}]);assert.equal(payload.max_tool_calls,2);assert.deepEqual(payload.include,['web_search_call.action.sources']);assert.ok(payload.instructions.includes('untrusted data'));assert.ok(payload.instructions.includes('Do not assume a bottler is the distiller'));assert.equal(payload.input[0].content.filter(c=>c.type==='input_image').length,2);assert.ok(payload.input[0].content[1].image_url.startsWith('data:image/jpeg;base64,'));return response(data);
  }});
  const photo=await image(),read=await ai.recognize({images:[photo,photo]},1);assert.equal(read.fields.name.value,'Wild Turkey 101');assert.equal(read.fields.proof.value,101);assert.equal(read.fields.distillery.value,null);assert.equal(JSON.stringify(read).includes('test-secret'),false);assert.equal(calls,1);
 });
@@ -61,4 +61,19 @@ test('tasting notes require a valid source and suggestions require a label-backe
  data.fields.bourbon_notes={value:'Vanilla',evidence:'VANILLA',source:'producer verified'};assert.equal(validateRecognition(data).fields.bourbon_notes.value,null);
  data.fields.bourbon_notes={value:'x'.repeat(2001),evidence:'x',source:'label'};assert.throws(()=>validateRecognition(data),/invalid bottle text/);
  data=result();data.readable=false;data.fields.name={value:'Wild Turkey',evidence:'WILD TURKEY'};data.fields.bourbon_notes={value:'Nose: vanilla.',evidence:null,source:'suggested'};assert.equal(validateRecognition(data).fields.bourbon_notes.value,null);
+});
+
+
+test('reference enrichment fills absent distillery information with retrieved source provenance',()=>{
+ const data=result(),url='https://www.woodfordreserve.com/our-distillery/';data.fields.name={value:'Woodford Reserve',evidence:'WOODFORD RESERVE',source:'label',source_url:null};data.fields.distillery={value:'Woodford Reserve Distillery',evidence:'The official brand site identifies the Woodford Reserve Distillery in Versailles, Kentucky.',source:'reference',source_url:url};
+ const response={output:[{type:'web_search_call',action:{sources:[{url}]}},{type:'message',content:[{type:'output_text',annotations:[{type:'url_citation',url}]}]}]};
+ const read=validateRecognition(data,collectReferenceSources(response));assert.equal(read.fields.distillery.value,'Woodford Reserve Distillery');assert.equal(read.fields.distillery.source,'reference');assert.equal(read.fields.distillery.source_url,url);assert.equal(read.fields.name.source,'label');
+ data.fields.proof={value:90.4,evidence:'Typical standard expression; verify bottle.',source:'suggested',source_url:null};assert.equal(validateRecognition(data,[url]).fields.proof.source,'suggested');
+});
+test('unretrieved or unsafe references remain reviewable AI suggestions rather than claimed citations',()=>{
+ const data=result();data.fields.distillery={value:'Possible distillery',evidence:'Product knowledge',source:'reference',source_url:'https://unretrieved.example/distillery'};
+ const read=validateRecognition(data);assert.equal(read.fields.distillery.value,'Possible distillery');assert.equal(read.fields.distillery.source,'suggested');assert.equal(read.fields.distillery.source_url,null);assert.match(read.warnings.join(' '),/could not be linked/);
+ for(const url of ['javascript:alert(1)','https://user:pass@example.com','http://127.0.0.1/private','https://localhost/','https://host.internal/'])assert.equal(referenceURL(url),null);
+ data.fields.name={value:'Woodford Reserve',evidence:'WOODFORD RESERVE'};data.fields.bourbon_notes={value:'Nose: caramel.',evidence:'Official tasting profile.',source:'reference',source_url:'https://www.woodfordreserve.com/'};
+ const profile=validateRecognition(data,['https://www.woodfordreserve.com/']).fields.bourbon_notes;assert.equal(profile.source,'reference');assert.match(profile.value,/^Reference tasting profile/);
 });
