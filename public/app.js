@@ -49,9 +49,9 @@ function memberDialog() { $('#member-form').reset(); $('#member-error').textCont
 $('#add-member').onclick=memberDialog;
 function bottleDialog(b=null) {
   if (!state.members.length) { toast('Add a member first, then add their bottle.'); view(true); memberDialog(); return; }
-  editing=b?.id??null; const form=$('#bottle-form'); form.reset();
+  editing=b?.id??null; const form=$('#bottle-form'); form.dispatchEvent(new Event('scanner-reset'));form.reset();
   form.elements.member_id.innerHTML=state.members.map(m=>`<option value="${m.id}">${escape(m.name)}</option>`).join('');
-  if (b) for (const key of ['name','member_id','distillery','proof','year','rating','remaining','price','bourbon_notes','member_notes','catalog_id','age_years','size_ml','release','label','expression']) form.elements[key].value=b[key]??'';
+  if (b) for (const key of ['name','member_id','distillery','proof','year','rating','remaining','price','bourbon_notes','member_notes','catalog_id','age_years','size_ml','release','label','expression','barcode']) form.elements[key].value=b[key]??'';
   else if(currentUser)form.elements.member_id.value=currentUser.member_id;
   else if ($('#member-filter').value) form.elements.member_id.value=$('#member-filter').value;
   $('#bottle-title').textContent=b?'Edit bottle':'Add a bottle'; $('#remaining-output').value=form.elements.remaining.value+'%';
@@ -307,4 +307,13 @@ $('#members').addEventListener('click',async e=>{
   button.disabled=true;
   try{await api('auth/role','POST',{member_id:member.id,role});await refresh();toast(role==='admin'?'Administrator access granted.':'Member role updated.');}
   catch(e){toast(e.message);button.disabled=false;}
+});
+
+$('#bottle-form').addEventListener('scan-details',e=>{
+  const data=e.detail,form=$('#bottle-form');
+  if(data.keepIdentity){form.elements.barcode.value=data.barcode;toast('Barcode kept. Enter and confirm your bottle details before saving.');return;}
+  bottleLookup.reset();
+  for(const key of ['catalog_id','name','distillery','proof','age_years','size_ml','release','label','expression','barcode'])form.elements[key].value=data[key]??'';
+  form.elements.year.value='';
+  toast('Suggested details added. Check the label, proof, and batch before saving.');
 });

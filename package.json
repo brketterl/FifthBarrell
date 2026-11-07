@@ -17,5 +17,10 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@zxing/browser": "^0.2.1",
+    "tesseract.js": "^7.0.0"
   }
 }

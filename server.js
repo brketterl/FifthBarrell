@@ -9,10 +9,12 @@ import { fileURLToPath } from 'node:url';
 import { searchCatalog, catalog } from './catalog.js';
 import { setupTastings, tastingStages } from './tasting.js';
 import { setupEvents } from './events.js';
+import {setupBarcodeLookup,normalizeBarcode} from './barcode.js';
+import {searchLabel} from './label-search.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const ratings = ['Favorite', 'Daily Drinker', 'Just OK', 'Do not Buy Again'];
-export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false, accessPassword, requireAuth = false, publicOrigin} = {}) {
+export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowUnconfigured = false, accessPassword, requireAuth = false, publicOrigin, barcodeFetch} = {}) {
   const security=requestSecurity(publicOrigin);
   if(requireAuth&&!accessPassword)throw new Error('ACCESS_PASSWORD is required when REQUIRE_AUTH=true.');
   const digest=value=>createHash('sha256').update(value).digest();
@@ -27,8 +29,9 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   const tastings=setupTastings(db);
   const events=setupEvents(db);
   const bottleColumns=new Set(db.prepare('PRAGMA table_info(bottles)').all().map(c=>c.name));
-  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
+  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT'],['barcode','TEXT']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
   const auth=setupAuth(db,security);
+  const lookupBarcode=setupBarcodeLookup(db,barcodeFetch);
   const catalogById=new Map(catalog.map(b=>[b.id,b]));
   const withLabel=row=>({...row,label:row.label??catalogById.get(row.catalog_id)?.label??'',expression:row.expression??catalogById.get(row.catalog_id)?.expression??''});
   const send = (res, status, body) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(body)); };
@@ -46,6 +49,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
     }
     if (!result.name) throw new Error('Bottle name is required.');
     if(input.catalog_id!=null&&typeof input.catalog_id!=='string')throw new Error('Invalid catalog reference.');
+    result.barcode=input.barcode?normalizeBarcode(input.barcode):null;
     result.catalog_id=input.catalog_id?.trim()||null;
     if(result.catalog_id?.length>250)throw new Error('Catalog reference is too long.');
     if (!ratings.includes(input.rating)) throw new Error('Choose a bottle preference.');
@@ -94,6 +98,8 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
           }
         }
       }
+      if(url.pathname==='/api/barcode'&&req.method==='POST')return send(res,200,await lookupBarcode((await body(req)).barcode));
+      if(url.pathname==='/api/catalog/label'&&req.method==='POST')return send(res,200,{results:searchLabel((await body(req)).text)});
       if (url.pathname==='/api/state' && req.method==='GET') return send(res,200,{members:db.prepare('SELECT m.*,a.role FROM members m LEFT JOIN accounts a ON a.member_id=m.id ORDER BY m.name COLLATE NOCASE').all(),bottles:db.prepare('SELECT * FROM bottles ORDER BY created_at DESC,id DESC').all().map(withLabel),tastings:tastings.all(),tastingStages,events:events.all(),pours:events.pours().map(withLabel)});
       if (url.pathname==='/api/events' && req.method==='POST') {const saved=events.create(await body(req));if(user)db.prepare('UPDATE events SET host_member_id=? WHERE id=?').run(user.member_id,saved.id);return send(res,201,saved);}
       const eventMatch=url.pathname.match(/^\/api\/events\/(\d+)$/);
@@ -153,9 +159,18 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
       }
       if (url.pathname.startsWith('/api/')) return send(res,404,{error:'Not found.'});
       if (!['GET','HEAD'].includes(req.method)) return send(res,405,{error:'Method not allowed.'});
-      const files={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css','/logo.svg':'logo.svg'};
+      const files={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css','/logo.svg':'logo.svg','/scan.js':'scan.js'};
+      const vendor={
+        '/vendor/zxing.js':'@zxing/browser/umd/zxing-browser.min.js',
+        '/vendor/tesseract.js':'tesseract.js/dist/tesseract.min.js',
+        '/vendor/worker.min.js':'tesseract.js/dist/worker.min.js',
+        '/vendor/lang/eng.traineddata.gz':'@tesseract.js-data/eng/4.0.0/eng.traineddata.gz'
+      };
+      const core=url.pathname.match(/^\/vendor\/core\/(tesseract-core(?:-simd|-relaxedsimd)?(?:-lstm)?\.wasm(?:\.js)?)$/);
+      const asset=vendor[url.pathname]||(core?'tesseract.js-core/'+core[1]:null);
+      if(asset){res.writeHead(200,{'Content-Type':asset.endsWith('.js')?'text/javascript':asset.endsWith('.wasm')?'application/wasm':'application/octet-stream','Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; object-src 'none'"});return res.end(req.method==='HEAD'?undefined:readFileSync(join(root,'node_modules',asset)));}
       const file=files[url.pathname]; if (!file) return send(res,404,{error:'Not found.'});
-      res.writeHead(200,{'Content-Type':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
+      res.writeHead(200,{'Content-Type':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
       res.end(req.method==='HEAD'?undefined:readFileSync(join(root,'public',file)));
     } catch(error) { send(res,400,{error:error.message}); }
   };
