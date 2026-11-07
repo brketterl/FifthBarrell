@@ -159,6 +159,7 @@ function showPourForm(event,reveal=null){
   f.elements.bottle_id.innerHTML='<option value="">Enter a whiskey manually</option>'+state.bottles.map(b=>`<option value="${b.id}">${escape(b.name)} · ${escape(owner(b.member_id))}</option>`).join('');
   pourLookup.reset();
   $('#pour-identity-lookup').hidden=blind;$('#pour-identity-fields').hidden=blind;
+  f.querySelectorAll('#pour-identity-lookup input, #pour-identity-lookup select, #pour-identity-fields input').forEach(input=>{input.disabled=blind;});
   $('#pour-title').textContent=reveal?'Reveal '+reveal.blind_label:blind?'Add an anonymous sample':'Add a pour to the flight';
   $('#pour-name-label').textContent=blind?'Sample name *':'Whiskey name *';
   f.querySelector('[type=submit]').textContent=reveal?'Reveal bourbon':blind?'Add sample':'Add pour';
