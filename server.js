@@ -33,7 +33,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   const events=setupEvents(db);
   const photos=setupPhotos(db,photoFetch);
   const bottleColumns=new Set(db.prepare('PRAGMA table_info(bottles)').all().map(c=>c.name));
-  for(const [name,type] of [['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT'],['photo_id','TEXT REFERENCES photos(id) ON DELETE SET NULL']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
+  for(const [name,type] of [['stars','INTEGER CHECK(stars BETWEEN 1 AND 5)'],['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT'],['photo_id','TEXT REFERENCES photos(id) ON DELETE SET NULL']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
   const auth=setupAuth(db,security);
   const catalogById=new Map(catalog.map(b=>[b.id,b]));
   const withLabel=row=>({...row,...('photo_id' in row?{photo:photos.info(row.photo_id)}:{}),label:row.label??catalogById.get(row.catalog_id)?.label??'',expression:row.expression??catalogById.get(row.catalog_id)?.expression??''});
@@ -59,8 +59,14 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
     }
     result.catalog_id=input.catalog_id?.trim()||null;
     if(result.catalog_id?.length>250)throw new Error('Catalog reference is too long.');
-    if (!ratings.includes(input.rating)) throw new Error('Choose a bottle preference.');
-    result.rating=input.rating;
+    if (input.rating!=null && input.rating!=='' && !ratings.includes(input.rating)) throw new Error('Choose a bottle preference.');
+    result.rating=input.rating||'';
+    const stars=input.stars;
+    if(stars==null||stars==='')result.stars=null;
+    else {
+      if(!['number','string'].includes(typeof stars)||!Number.isInteger(Number(stars))||Number(stars)<1||Number(stars)>5)throw new Error('Choose a whole star rating from 1 to 5.');
+      result.stars=Number(stars);
+    }
     for (const [key,min,max,optional] of [['member_id',1,Number.MAX_SAFE_INTEGER,false],['proof',0,200,true],['year',1700,2200,true],['remaining',0,100,false],['price',0,10000000,true],['age_years',0,200,true],['size_ml',1,100000,true]]) {
       const raw=input[key];
       if (optional && (raw==null || raw==='')) { result[key]=null; continue; }

@@ -1,8 +1,15 @@
 import { test, expect } from '@playwright/test';
+import http from 'node:http';
+import {createApp} from '../server.js';
 test('members can catalog, filter, update, and remove a bottle',async({page},testInfo)=>{
   const errors=[]; page.on('pageerror',e=>errors.push(e.message));
   const name=`Taylor ${testInfo.project.name}`;
-  await page.goto('/');
+  const app=createApp(':memory:'),server=http.createServer(app.handler);
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  try {
+  await page.request.post(base+'/api/auth/setup',{data:{name:'Host',email:'host@example.com',password:'p'}});
+  await page.goto(base);
   await page.getByRole('button',{name:'Society members'}).click();
   await page.getByRole('button',{name:'Add a member',exact:false}).click();
   const member=page.locator('#member-dialog'); await member.getByLabel('Member name').fill(name);
@@ -12,21 +19,32 @@ test('members can catalog, filter, update, and remove a bottle',async({page},tes
   await expect(page.locator('#collection-heading')).toHaveText(`${name}’s cabinet`);
   await page.locator('#add-bottle').click();
   const form=page.locator('#bottle-dialog');
+  await form.getByRole('combobox',{name:/^Member/}).selectOption({label:name});
   await form.getByLabel('Look up a whiskey').fill('eagle');
   await form.getByRole('button',{name:/Eagle Rare 10(Y| Year)/}).click();
   await expect(form.getByLabel('Name of bottle')).toHaveValue(/^Eagle Rare 10/);
   await form.getByRole('spinbutton',{name:/^Year/}).fill('2026'); await form.getByLabel('Preference').selectOption('Favorite');
+  await expect(form.getByRole('radio',{name:'Unrated',exact:true})).toBeChecked();
+  await form.getByRole('radio',{name:'4 · Really like it',exact:true}).check();
   await form.getByLabel('Purchase price').fill('59.99');
   await form.getByLabel('Bourbon / tasting notes').fill('Oak, vanilla, and orange peel.');
   await form.getByLabel('Member notes').fill('A great pour with friends.');
   await form.getByRole('button',{name:'Save bottle'}).click();
   await expect(page.locator('.bottle-card')).toHaveCount(1);
   await expect(page.locator('#stat-value')).toHaveText('$59.99');
-  await page.reload(); await page.locator('#member-filter').selectOption({label:`${name}’s cabinet`});
+  await expect(page.locator('.bottle-card .bottle-rating')).toContainText('4/5');
+  await page.locator('#stars-filter').selectOption('unrated');await expect(page.locator('.bottle-card')).toHaveCount(0);
+  await page.locator('#stars-filter').selectOption('4+');await expect(page.locator('.bottle-card')).toHaveCount(1);
+  await page.locator('#stars-filter').selectOption('');
+  await page.locator('#sort').selectOption('stars');
+  await page.reload(); await page.locator('#cabinet-nav').click(); await page.locator('#member-filter').selectOption({label:`${name}’s cabinet`});
   await page.locator('.bottle-card').click(); await expect(page.locator('#detail')).toContainText('A great pour with friends.');
   await page.getByRole('button',{name:'Edit bottle'}).click();
+  await expect(form.getByRole('radio',{name:'4 · Really like it',exact:true})).toBeChecked();
+  await form.getByRole('radio',{name:'Unrated',exact:true}).check();
   await form.locator('[name=remaining]').fill('50'); await form.getByRole('button',{name:'Save bottle'}).click();
   await expect(page.locator('.remaining-line')).toContainText('50%');
+  await expect(page.locator('.bottle-card .bottle-rating')).toHaveText('Unrated');
   await page.locator('#search').fill('not a whiskey'); await expect(page.locator('.bottle-card')).toHaveCount(0);
   await page.locator('#search').fill(''); await page.locator('#rating-filter').selectOption('Daily Drinker'); await expect(page.locator('.bottle-card')).toHaveCount(0);
   await page.locator('#rating-filter').selectOption('Favorite'); await expect(page.locator('.bottle-card')).toHaveCount(1);
@@ -38,4 +56,5 @@ test('members can catalog, filter, update, and remove a bottle',async({page},tes
   await page.locator('.member-card').filter({hasText:name}).getByRole('button',{name:'Remove member'}).click();
   await expect(page.locator('#members')).not.toContainText(name);
   expect(errors).toEqual([]);
+  } finally {await new Promise(r=>server.close(r));app.close();}
 });
