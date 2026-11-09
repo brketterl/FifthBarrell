@@ -25,8 +25,8 @@ test('members can catalog, filter, update, and remove a bottle',async({page},tes
   await expect(form.getByLabel('Name of bottle')).toHaveValue(/^Eagle Rare 10/);
   await form.getByRole('spinbutton',{name:/^Year/}).fill('2026'); await form.getByLabel('Preference').selectOption('Favorite');
   await expect(form.getByRole('radio',{name:'Unrated',exact:true})).toBeChecked();
-  await form.locator('.star-picker').click({position:{x:187,y:24}});
-  await expect(form.getByRole('radio',{name:'4.5 stars',exact:true})).toBeChecked();
+  await form.locator('.star-picker').click({position:{x:55,y:24}});
+  await expect(form.getByRole('radio',{name:'1.5 stars',exact:true})).toBeChecked();
   await form.locator('.enjoyment').screenshot({path:`/tmp/fifth-barrel-stars-${testInfo.project.name}.png`});
   await form.getByLabel('Purchase price').fill('59.99');
   await form.getByLabel('Bourbon / tasting notes').fill('Oak, vanilla, and orange peel.');
@@ -34,15 +34,21 @@ test('members can catalog, filter, update, and remove a bottle',async({page},tes
   await form.getByRole('button',{name:'Save bottle'}).click();
   await expect(page.locator('.bottle-card')).toHaveCount(1);
   await expect(page.locator('#stat-value')).toHaveText('$59.99');
-  await expect(page.locator('.bottle-card .bottle-rating')).toContainText('4.5/5');
+  await expect(page.locator('.bottle-card .bottle-rating')).toContainText('1.5/5');
+  // Empty rating stars must not inherit the collection's large empty-state panel styles.
+  const starBounds=await page.locator('.bottle-card .rating-star').evaluateAll(stars=>stars.map(s=>{const r=s.getBoundingClientRect();return {height:r.height,width:r.width,top:r.top};}));
+  expect(starBounds).toHaveLength(5);
+  expect(starBounds.every(r=>r.height<=24&&r.width<=24&&r.top===starBounds[0].top)).toBe(true);
+
+  await page.locator('.bottle-card').screenshot({path:`/tmp/fifth-barrel-rating-card-${testInfo.project.name}.png`});
   await page.locator('#stars-filter').selectOption('unrated');await expect(page.locator('.bottle-card')).toHaveCount(0);
-  await page.locator('#stars-filter').selectOption('4+');await expect(page.locator('.bottle-card')).toHaveCount(1);
+  await page.locator('#stars-filter').selectOption('1.5');await expect(page.locator('.bottle-card')).toHaveCount(1);
   await page.locator('#stars-filter').selectOption('');
   await page.locator('#sort').selectOption('stars');
   await page.reload(); await page.locator('#cabinet-nav').click(); await page.locator('#member-filter').selectOption({label:`${name}’s cabinet`});
   await page.locator('.bottle-card').click(); await expect(page.locator('#detail')).toContainText('A great pour with friends.');
   await page.getByRole('button',{name:'Edit bottle'}).click();
-  await expect(form.getByRole('radio',{name:'4.5 stars',exact:true})).toBeChecked();
+  await expect(form.getByRole('radio',{name:'1.5 stars',exact:true})).toBeChecked();
   await form.getByRole('radio',{name:'Unrated',exact:true}).check();
   await form.locator('[name=remaining]').fill('50'); await form.getByRole('button',{name:'Save bottle'}).click();
   await expect(page.locator('.remaining-line')).toContainText('50%');
