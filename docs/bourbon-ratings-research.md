@@ -4,7 +4,7 @@
 
 The cabinet's original required preference list combines liking (Favorite, Just OK), usage (Daily Drinker), and purchase intent (Do not Buy Again). These are different questions: a daily pour can be loved, and a loved bottle can be too expensive to buy again. This is a heuristic finding from the interface, not an observed user-study result.
 
-Use an optional five-point personal enjoyment rating: 1 Dislike, 2 Not for me, 3 Like it, 4 Really like it, 5 Love it. The labels are proposed product language and need validation. Unrated is distinct from a low score. Whole stars offer quick comparison without requiring precise judgments. Keep the existing preference values as optional tags to preserve members' records. Do not infer stars from those tags or from event tasting scores.
+Use an optional five-point personal enjoyment rating: 1 Dislike, 2 Not for me, 3 Like it, 4 Really like it, 5 Love it. The labels are proposed product language and need validation. Unrated is distinct from a low score. The initial whole-star design was revised after owner feedback: five clickable stars now support half-star increments from 0.5 to 5, with a separate Unrated choice. Keep the existing preference values as optional tags to preserve members' records. Do not infer stars from those tags or from event tasting scores.
 
 The cabinet rating belongs to the bottle's member. Event tastings retain their separate 1–10 enjoyment scores and context; no automatic conversion or averaging is introduced. Favorites counts continue to use the Favorite tag.
 
@@ -28,4 +28,4 @@ Observe completion, hesitation, accidental selections, and whether participants 
 
 ## Implemented behavior
 
-New and existing bottles start with no numeric rating; legacy preferences are preserved. Members can choose or clear stars while adding/editing bottles. Cards and details display the score and meaning. Filters support exact scores, 4 and up, and unrated bottles; highest-rated sorting places unrated bottles last. API validation accepts only whole stars 1–5 or no rating, and SQLite adds a nullable column without rewriting legacy records. JSON exports include stars through the existing state export.
+New and existing bottles start with no numeric rating; legacy preferences are preserved. Members can choose or clear stars while adding/editing bottles. Cards and details display the score and meaning. Filters support exact scores, 4 and up, and unrated bottles; highest-rated sorting places unrated bottles last. API validation accepts half-star increments 0.5–5 or no rating, and SQLite upgrades the original whole-star column transactionally, preserving saved ratings. JSON exports include stars through the existing state export.

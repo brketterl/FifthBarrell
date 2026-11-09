@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import {DatabaseSync} from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,10 +21,10 @@ test('society lifecycle, bottle validation, persistence, lookup, and member remo
     assert.equal((await request('members','POST',{name:'  '})).status,400);
     const first=(await request('members','POST',{name:'Alex'})).data;
     const second=(await request('members','POST',{name:'Jordan'})).data;
-    const bottle={name:'Eagle Rare 10 Year',member_id:first.id,distillery:'Buffalo Trace',proof:90,year:2026,rating:'Favorite',stars:4,remaining:75,price:49.95,bourbon_notes:'Oak & vanilla',member_notes:'Shared with friends.'};
+    const bottle={name:'Eagle Rare 10 Year',member_id:first.id,distillery:'Buffalo Trace',proof:90,year:2026,rating:'Favorite',stars:4.5,remaining:75,price:49.95,bourbon_notes:'Oak & vanilla',member_notes:'Shared with friends.'};
     const saved=await request('bottles','POST',bottle); assert.equal(saved.status,201);
-    assert.equal(saved.data.stars,4);
-    for(const stars of [0,6,2.5,true,[],{},'bad'])assert.equal((await request('bottles','POST',{...bottle,stars})).status,400);
+    assert.equal(saved.data.stars,4.5);
+    for(const stars of [0,6,2.25,true,[],{},'bad'])assert.equal((await request('bottles','POST',{...bottle,stars})).status,400);
     assert.equal((await request('bottles/'+saved.data.id,'PUT',{...bottle,stars:''})).status,200);
     assert.equal((await request('state')).data.bottles[0].stars,null);
     assert.equal((await request('bottles','POST',{...bottle,remaining:101})).status,400);
@@ -39,7 +40,7 @@ test('society lifecycle, bottle validation, persistence, lookup, and member remo
     await stop(); app=createApp(path,{allowUnconfigured:true}); server=http.createServer(app.handler); await start();
     state=(await request('state')).data; assert.equal(state.bottles.length,2); assert.equal(state.members.length,2);
     assert.equal(state.bottles.find(b=>b.id===saved.data.id).member_notes,'Updated notes.');
-    assert.equal(state.bottles.find(b=>b.id===saved.data.id).stars,4);
+    assert.equal(state.bottles.find(b=>b.id===saved.data.id).stars,4.5);
     const lookup=(await request('catalog?q=eagle')).data; assert.match(lookup.results[0].name,/^Eagle Rare 10/); assert.ok(lookup.total>=12);assert.ok(lookup.results[0].id);
     assert.equal((await request('members/'+first.id,'DELETE')).status,200);
     state=(await request('state')).data; assert.equal(state.bottles.length,1); assert.equal(state.bottles[0].member_id,second.id);
@@ -92,4 +93,19 @@ test('shared flights preserve independent tastings, validate scores, and survive
     assert.equal((await request('tastings/'+second.data.id,'DELETE')).status,200);
     assert.equal((await request('tastings/'+second.data.id,'DELETE')).status,404);
   }finally{await stop();rmSync(dir,{recursive:true,force:true});}
+});
+
+test('whole-star database upgrades preserve ratings and allow half-star values',()=>{
+  const dir=mkdtempSync(join(tmpdir(),'fifth-barrel-stars-')),path=join(dir,'test.sqlite');
+  let app;
+  try{
+    app=createApp(path);app.close();app=null;
+    let db=new DatabaseSync(path);
+    db.exec("ALTER TABLE bottles DROP COLUMN stars; ALTER TABLE bottles ADD COLUMN stars INTEGER CHECK(stars BETWEEN 1 AND 5); INSERT INTO members(id,name) VALUES(1,'Alex'); INSERT INTO bottles(member_id,name,rating,remaining,stars) VALUES(1,'Old bottle','Favorite',100,4)");db.close();
+    app=createApp(path);app.close();app=null;db=new DatabaseSync(path);
+    assert.equal(db.prepare('SELECT stars FROM bottles').get().stars,4);
+    for(const stars of [0.5,1,1.5,2,2.5,3,3.5,4,4.5,5]){db.prepare('UPDATE bottles SET stars=?').run(stars);assert.equal(db.prepare('SELECT stars FROM bottles').get().stars,stars);}
+    assert.throws(()=>db.prepare('UPDATE bottles SET stars=?').run(3.25));
+    db.close();app=createApp(path);app.close();app=null;
+  }finally{app?.close();rmSync(dir,{recursive:true,force:true});}
 });

@@ -33,7 +33,13 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
   const events=setupEvents(db);
   const photos=setupPhotos(db,photoFetch);
   const bottleColumns=new Set(db.prepare('PRAGMA table_info(bottles)').all().map(c=>c.name));
-  for(const [name,type] of [['stars','INTEGER CHECK(stars BETWEEN 1 AND 5)'],['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT'],['photo_id','TEXT REFERENCES photos(id) ON DELETE SET NULL']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
+  for(const [name,type] of [['stars','REAL CHECK(stars BETWEEN 0.5 AND 5 AND stars*2=CAST(stars*2 AS INTEGER))'],['catalog_id','TEXT'],['age_years','REAL'],['size_ml','REAL'],['release','TEXT'],['label','TEXT'],['expression','TEXT'],['photo_id','TEXT REFERENCES photos(id) ON DELETE SET NULL']])if(!bottleColumns.has(name))db.exec(`ALTER TABLE bottles ADD COLUMN ${name} ${type}`);
+  // Preserve ratings from the original whole-star column while widening its constraint.
+  if(db.prepare('PRAGMA table_info(bottles)').all().find(c=>c.name==='stars')?.type==='INTEGER'){
+    db.exec(`BEGIN; ALTER TABLE bottles RENAME COLUMN stars TO legacy_stars;
+      ALTER TABLE bottles ADD COLUMN stars REAL CHECK(stars BETWEEN 0.5 AND 5 AND stars*2=CAST(stars*2 AS INTEGER));
+      UPDATE bottles SET stars=legacy_stars; COMMIT;`);
+  }
   const auth=setupAuth(db,security);
   const catalogById=new Map(catalog.map(b=>[b.id,b]));
   const withLabel=row=>({...row,...('photo_id' in row?{photo:photos.info(row.photo_id)}:{}),label:row.label??catalogById.get(row.catalog_id)?.label??'',expression:row.expression??catalogById.get(row.catalog_id)?.expression??''});
@@ -64,7 +70,7 @@ export function createApp(dbPath = join(root, 'data', 'society.sqlite'), {allowU
     const stars=input.stars;
     if(stars==null||stars==='')result.stars=null;
     else {
-      if(!['number','string'].includes(typeof stars)||!Number.isInteger(Number(stars))||Number(stars)<1||Number(stars)>5)throw new Error('Choose a whole star rating from 1 to 5.');
+      if(!['number','string'].includes(typeof stars)||!Number.isInteger(Number(stars)*2)||Number(stars)<0.5||Number(stars)>5)throw new Error('Choose a star rating from 0.5 to 5 in half-star increments.');
       result.stars=Number(stars);
     }
     for (const [key,min,max,optional] of [['member_id',1,Number.MAX_SAFE_INTEGER,false],['proof',0,200,true],['year',1700,2200,true],['remaining',0,100,false],['price',0,10000000,true],['age_years',0,200,true],['size_ml',1,100000,true]]) {
